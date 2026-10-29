@@ -8,9 +8,13 @@ Open `index.html` in a browser. There's nothing to install. Audio is generated l
 
 ## How it works
 
-1. **Choose a vibe.** Tap a vibe card, or type something like *"rainy night, soft piano, 72 bpm in A minor"* and hit BREW.
-2. **Shape the sound.** Set speed, bounce (swing), vintage (tape dust and wobble) and space (reverb).
-3. **Pick instruments.** Turn keys, bass, drums, melody, pad, vinyl crackle and rain on or off.
+The whole studio fits on one screen, on a phone or a desktop: the scene, a panel of tabs, and the player. Nothing scrolls.
+
+1. **Vibe.** Tap a vibe card, or type something like *"rainy night, soft piano, 72 bpm in A minor"* and hit BREW.
+2. **Shape.** Set speed, bounce (swing), vintage (tape dust and wobble) and space (reverb), and fine-tune the key, chords and piano.
+3. **Mix.** Turn keys, bass, drums, melody, pad, vinyl crackle and rain on or off, and set each one's volume.
+
+**+ Sounds** takes your own audio files, and **Albums** has seven finished albums.
 
 **TRY ANOTHER** keeps the vibe and makes a new melody and beat. **RECORD** saves what you hear as a `.webm` file.
 
