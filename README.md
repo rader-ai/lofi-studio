@@ -14,11 +14,17 @@ Open `index.html` in a browser. There's nothing to install. Audio is generated l
 
 ## Albums
 
-There are three finished albums, each with pixel-art cover art you can download as a 1200×1200 PNG:
+There are seven finished albums. Each one is set in its own animated pixel scene, and its cover art is painted from that scene (you can download it as a 1200×1200 PNG):
 
-- **Lanterns in the Rain:** late nights, rain on the glass
-- **Sunday at the Observatory:** golden-hour jazz
-- **Sleepwalker's Keep:** drifting, mostly drumless, after midnight
+| Album | Scene |
+|---|---|
+| Lanterns in the Rain | cozy home office, rain on the window |
+| Sunday at the Observatory | park bench below the observatory |
+| Sleepwalker's Keep | dock on a moonlit lake |
+| Corner Booth Sessions | coffee shop booth by the window |
+| Seeds & Sunlight | garden on a sunny morning |
+| Campfire Under Pines | camping by a fire in the forest |
+| Low Tide Postcards | walking the beach at sunset |
 
 Each track is a fixed recipe and seed, so it plays the same song every time. Albums play one full arrangement per track, then move to the next track.
 
