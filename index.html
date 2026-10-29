@@ -1,0 +1,1764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lofi Studio</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#07040f; --night:#120c28; --stone:#1d1640; --stone2:#2a2058; --edge:#5b4a9e; --edge2:#8a78d6;
+    --text:#ece6ff; --muted:#a79dd6; --gold:#f5c542; --gold2:#b8892a; --torch:#e8692c; --torch2:#ffb347;
+    --blood:#c2334d; --teal:#4fd1c5;
+    --pixel:"Press Start 2P", monospace; --body:"VT323", ui-monospace, monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; color:var(--text); background-color:var(--night);
+    font:22px/1.15 var(--body);
+    background-image:
+      linear-gradient(var(--ink) 2px, transparent 2px),
+      linear-gradient(90deg, var(--ink) 2px, transparent 2px),
+      linear-gradient(90deg, var(--ink) 2px, transparent 2px);
+    background-size:64px 32px, 64px 64px, 64px 64px;
+    background-position:0 0, 0 0, 32px 32px;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:-1;
+    background:radial-gradient(ellipse at 50% 0%, rgba(42,32,88,.55), rgba(7,4,15,.92) 75%);
+  }
+  body::after{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+    background:repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.14) 2px 3px);
+  }
+
+  header{max-width:1180px;margin:0 auto;padding:26px 16px 6px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+  h1{margin:0;font:24px/1 var(--pixel);text-shadow:3px 3px 0 var(--ink), 6px 6px 0 #3b2a7a;letter-spacing:2px}
+  h1 span{color:var(--gold);animation:shimmer 3s steps(1) infinite}
+  header p{margin:0;color:var(--muted);flex:1}
+  @keyframes shimmer{0%,92%{color:var(--gold)} 94%{color:#fff3c4} 96%{color:var(--torch2)}}
+
+  .layout{max-width:1180px;margin:0 auto;padding:16px 16px 130px;display:grid;gap:24px;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:start}
+  .steps{display:flex;flex-direction:column;gap:24px}
+
+  .card{
+    position:relative; background:linear-gradient(180deg,var(--stone2) 0 4px,var(--stone) 4px);
+    border:4px solid var(--edge); padding:20px 18px 18px;
+    box-shadow:0 0 0 4px var(--ink), inset 0 0 0 3px var(--ink), inset 0 0 0 6px #241b4c, 10px 10px 0 4px rgba(0,0,0,.55);
+    animation:rise .7s steps(7) both;
+  }
+  .card::before,.card::after{content:"";position:absolute;top:6px;width:6px;height:6px;background:var(--gold);box-shadow:0 0 0 2px var(--ink)}
+  .card::before{left:6px} .card::after{right:6px}
+  .steps .card:nth-child(2){animation-delay:.08s} .steps .card:nth-child(3){animation-delay:.16s}
+  .steps .card:nth-child(4){animation-delay:.24s} .steps .card:nth-child(5){animation-delay:.32s}
+  @keyframes rise{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+
+  .step h2{margin:0 0 8px;font:12px/1.4 var(--pixel);color:var(--gold);text-transform:uppercase;text-shadow:2px 2px 0 var(--ink);display:flex;align-items:center;gap:12px}
+  .step h2 b{display:inline-grid;place-items:center;width:28px;height:28px;background:var(--torch);color:var(--ink);text-shadow:none;box-shadow:0 0 0 3px var(--ink)}
+  .lead{margin:0 0 16px;color:var(--muted)}
+
+  .scene-card{position:sticky;top:16px;padding:12px}
+  canvas#viz{width:100%;height:auto;aspect-ratio:320/150;display:block;image-rendering:pixelated;background:var(--ink)}
+  .scene-caption{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;background:var(--ink);padding:10px 12px}
+  #chordName{font:16px/1 var(--pixel);color:var(--gold)}
+  #sectionName{color:var(--teal);text-align:right}
+
+  button{
+    font:10px/1.2 var(--pixel); color:var(--text); background:var(--stone2); border:none; border-radius:0;
+    padding:13px 14px; cursor:pointer; position:relative;
+    box-shadow:0 0 0 3px var(--ink), inset -4px -4px 0 rgba(0,0,0,.4), inset 4px 4px 0 rgba(255,255,255,.14);
+  }
+  button:hover{background:#3b2e78}
+  button:active{transform:translate(2px,2px);box-shadow:0 0 0 3px var(--ink), inset 4px 4px 0 rgba(0,0,0,.4)}
+  button:focus-visible,summary:focus-visible,.drop:focus-visible{outline:3px solid var(--gold);outline-offset:4px}
+  button.primary{background:var(--torch);color:var(--ink)}
+  button.primary:hover{background:#ff8445}
+  button.ghost{background:transparent;box-shadow:0 0 0 3px var(--edge);font-size:9px}
+  button.rec.on{background:var(--blood);color:#fff;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:.4}}
+
+  /* vibe cards */
+  .vibes{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+  .vibe{display:flex;align-items:flex-start;gap:12px;text-align:left;padding:12px;font:inherit;min-width:0;height:100%}
+  .vibe .ic{flex:none;font-size:26px;line-height:1;color:var(--gold);width:30px;text-align:center}
+  .vibe .txt{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .vibe .nm{font:9px/1.6 var(--pixel);color:var(--text);overflow-wrap:break-word}
+  .vibe .ds{font:18px/1.05 var(--body);color:var(--muted);overflow-wrap:break-word}
+  .vibe.active{background:var(--gold);}
+  .vibe.active .nm,.vibe.active .ds,.vibe.active .ic{color:var(--ink)}
+  .describe{margin-top:18px}
+  .describe label{color:var(--muted)}
+  .row{display:flex;gap:12px;align-items:stretch;margin-top:8px}
+  .hint{color:var(--teal);font-size:19px;margin:10px 0 0;min-height:1em}
+  code{color:var(--teal);font-family:var(--body);font-size:21px}
+
+  input[type=text],select{
+    font:22px/1.1 var(--body); color:var(--text); background:var(--ink); border:3px solid var(--edge);
+    border-radius:0; padding:7px 10px; width:100%;
+  }
+  input[type=text]:focus,select:focus{outline:3px solid var(--gold);outline-offset:0}
+
+  /* shape sliders */
+  .knob{margin:0 0 16px}
+  .knob-top{display:flex;justify-content:space-between;margin-bottom:6px}
+  .knob-top span{font:10px/1.4 var(--pixel)}
+  .knob output{color:var(--gold)}
+  .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:18px;margin-top:4px}
+
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:var(--ink);border:2px solid var(--edge);margin:0;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:24px;background:var(--gold);border:none;box-shadow:0 0 0 2px var(--ink), inset -3px -3px 0 var(--gold2)}
+  input[type=range]::-moz-range-thumb{width:14px;height:24px;background:var(--gold);border:none;border-radius:0;box-shadow:0 0 0 2px var(--ink), inset -3px -3px 0 var(--gold2)}
+  input[type=range]:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+
+  /* instruments */
+  .inst{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));grid-auto-rows:1fr;gap:12px}
+  .tile{background:var(--ink);padding:10px;box-shadow:0 0 0 2px var(--stone2);display:flex;flex-direction:column}
+  .tile button{flex:1;width:100%;text-align:left;display:flex;flex-direction:column;justify-content:flex-start;gap:5px;padding:10px;font:inherit}
+  .tile .nm{font:9px/1.6 var(--pixel);overflow-wrap:break-word}
+  .tile .ds{font:17px/1.05 var(--body);color:var(--muted);overflow-wrap:break-word}
+  .tile button > span{min-width:0}
+  .tile button[aria-pressed=true]{background:var(--teal);color:var(--ink)}
+  .tile button[aria-pressed=true] .ds{color:#103a37}
+  .tile button[aria-pressed=false] .nm{color:#6d64a0;text-decoration:line-through}
+  .tile input[type=range]{flex:none;margin-top:10px;height:10px}
+  .tile input[type=range]::-webkit-slider-thumb{height:18px;width:10px}
+
+  /* tabs + albums */
+  .view{display:flex;flex-direction:column;gap:24px}
+  .view[hidden]{display:none}
+  .tabs{display:flex;gap:14px;padding-left:4px}
+  .tabs button{flex:1;padding:14px}
+  .tabs button[aria-selected=true]{background:var(--gold);color:var(--ink)}
+  h2.sec{margin:0 0 8px;font:12px/1.4 var(--pixel);color:var(--gold);text-transform:uppercase;display:flex;align-items:center;gap:12px}
+  h2.sec b{display:inline-grid;place-items:center;width:28px;height:28px;background:var(--torch);color:var(--ink);box-shadow:0 0 0 3px var(--ink)}
+  .shelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:18px}
+  .album{display:flex;flex-direction:column;gap:8px;text-align:left;padding:10px;font:inherit}
+  .album canvas,.ad-head canvas{width:100%;aspect-ratio:1;height:auto;image-rendering:pixelated;display:block;box-shadow:0 0 0 3px var(--ink)}
+  .album .nm{font:9px/1.6 var(--pixel);color:var(--gold)}
+  .album .ds,.ad-info .ds{color:var(--muted);font-size:19px}
+  .album:hover canvas{box-shadow:0 0 0 3px var(--gold)}
+  .back{margin-bottom:16px}
+  .ad-head{display:grid;grid-template-columns:minmax(120px,200px) 1fr;gap:18px;align-items:start}
+  .ad-info h3{margin:0 0 10px;font:14px/1.5 var(--pixel);color:var(--gold);text-shadow:2px 2px 0 var(--ink)}
+  .ad-info p{margin:0 0 8px}
+  .ad-actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;padding-left:4px}
+  .tracklist{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .tracklist button{width:100%;display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;text-align:left;font:inherit;padding:10px 12px}
+  .tracklist .no{font:10px var(--pixel);color:var(--muted)}
+  .tracklist .tn{min-width:0;overflow-wrap:break-word}
+  .tracklist .tm{color:var(--muted)}
+  .tracklist button.on{background:var(--teal);color:var(--ink)}
+  .tracklist button.on .no,.tracklist button.on .tm{color:var(--ink)}
+  @media (max-width:520px){ .ad-head{grid-template-columns:1fr} }
+
+  /* drawers */
+  .drawer{padding:0}
+  .drawer summary{list-style:none;cursor:pointer;padding:18px;display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
+  .drawer summary::-webkit-details-marker{display:none}
+  .drawer summary span{font:11px/1.4 var(--pixel);color:var(--gold)}
+  .drawer summary small{color:var(--muted);font-size:19px}
+  .drawer summary::after{content:"▼";margin-left:auto;color:var(--gold);font:10px var(--pixel)}
+  .drawer[open] summary::after{content:"▲"}
+  .drawer > :not(summary){margin-left:18px;margin-right:18px}
+  .drawer > :last-child{margin-bottom:18px}
+
+  .ctl{display:grid;grid-template-columns:120px 1fr 54px;align-items:center;gap:12px;margin:12px 0}
+  .ctl label{color:var(--muted)}
+  .ctl select{grid-column:2 / 4;padding:5px 8px}
+  .ctl output{color:var(--gold);text-align:right}
+
+  .drop{border:3px dashed var(--edge2);background:rgba(7,4,15,.6);padding:20px;text-align:center;cursor:pointer}
+  .drop small{color:var(--muted);font-size:18px}
+  .drop:hover,.drop.over{border-color:var(--gold);background:rgba(245,197,66,.08)}
+  .drop.over{animation:blink .5s steps(1) infinite}
+  .sample{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;gap:10px;align-items:center;padding:10px;margin-top:12px;background:var(--ink);box-shadow:0 0 0 2px var(--stone2)}
+  .sname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gold)}
+  .sname small{display:block;color:var(--muted);font-size:17px}
+  .sample canvas{grid-column:2;grid-row:1;width:100%;height:36px;image-rendering:pixelated;background:#0f0a22}
+  .sample .x{grid-column:3;grid-row:1;justify-self:end;padding:8px 10px;background:var(--blood)}
+  .sample > select{grid-column:1 / -1;font-size:20px}
+  .sdesc{grid-column:1 / -1;color:var(--muted);font-size:18px;margin-top:-4px}
+  .sample label{display:flex;align-items:center;gap:8px;color:var(--muted)}
+  .sample label:last-of-type{grid-column:2 / 4}
+  .sample label input[type=range]{flex:1;min-width:50px}
+  .sample label select{width:auto}
+  .sample output{color:var(--gold);min-width:28px}
+
+  /* sticky player */
+  .playerbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;align-items:center;gap:18px;
+    padding:14px max(16px, calc((100vw - 1180px) / 2 + 16px));
+    background:var(--ink);border-top:4px solid var(--edge);box-shadow:0 -4px 0 var(--ink), 0 -10px 30px rgba(0,0,0,.5)
+  }
+  button.big{font-size:13px;padding:16px 20px;min-width:140px}
+  .np{flex:1;min-width:0}
+  #trackTitle{font:12px/1.4 var(--pixel);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #npStatus{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pb-actions{display:flex;gap:14px}
+
+  dialog{
+    max-width:560px;color:var(--text);background:var(--stone);border:4px solid var(--edge);
+    box-shadow:0 0 0 4px var(--ink), 12px 12px 0 4px rgba(0,0,0,.6);padding:24px;font:22px/1.2 var(--body)
+  }
+  dialog::backdrop{background:rgba(7,4,15,.75)}
+  dialog h2{font:13px var(--pixel);color:var(--gold);margin:0 0 14px}
+  dialog li{margin:8px 0}
+  dialog b{color:var(--gold);font-weight:normal}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr}
+    .scene-card{position:relative;top:auto}
+    h1{font-size:18px}
+  }
+  @media (max-width:640px){
+    .playerbar{flex-wrap:wrap;gap:10px}
+    .pb-actions{width:100%}
+    .pb-actions button{flex:1}
+    .layout{padding-bottom:190px}
+    button.big{min-width:0}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none !important} }
+</style>
+</head>
+<body>
+<header>
+  <h1>LOFI <span>STUDIO</span></h1>
+  <p>~ a castle of quiet beats ~</p>
+  <button id="helpBtn" class="ghost">? HOW IT WORKS</button>
+</header>
+
+<main class="layout">
+  <section class="card scene-card">
+    <canvas id="viz" width="320" height="150" aria-label="Animated pixel castle that moves with the music"></canvas>
+    <div class="scene-caption">
+      <span id="chordName">—</span>
+      <span id="sectionName">pick a vibe to begin</span>
+    </div>
+  </section>
+
+  <div class="steps">
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="create" aria-selected="true">✎ CREATE</button>
+      <button role="tab" data-tab="albums" aria-selected="false">♫ ALBUMS</button>
+    </nav>
+    <div id="createView" class="view">
+    <section class="card step">
+      <h2><b>1</b> Choose a vibe</h2>
+      <p class="lead">Tap one. It starts playing right away.</p>
+      <div class="vibes" id="presets"></div>
+      <div class="describe">
+        <label for="vibe">…or describe your own</label>
+        <div class="row">
+          <input id="vibe" type="text" placeholder="rainy night, soft piano, nostalgic">
+          <button id="brew" class="primary">BREW</button>
+        </div>
+        <p class="hint" id="vibeNote">Try words like rain, night, jazz, sunny, sleepy, sad, old tape, 72 bpm, in A minor.</p>
+      </div>
+    </section>
+
+    <section class="card step">
+      <h2><b>2</b> Shape the sound</h2>
+      <p class="lead">Drag while it plays. Changes are instant.</p>
+      <div class="knob">
+        <div class="knob-top"><span>Speed</span><output id="bpmOut"></output></div>
+        <input id="bpm" type="range" min="58" max="96" step="1" aria-label="Speed">
+        <div class="ends"><span>slow</span><span>fast</span></div>
+      </div>
+      <div class="knob">
+        <div class="knob-top"><span>Bounce</span><output id="swingOut"></output></div>
+        <input id="swing" type="range" min="0" max="0.6" step="0.01" aria-label="Bounce">
+        <div class="ends"><span>straight</span><span>swingy</span></div>
+      </div>
+      <div class="knob">
+        <div class="knob-top"><span>Vintage</span><output id="vintageOut"></output></div>
+        <input id="vintage" type="range" min="0" max="1" step="0.01" aria-label="Vintage">
+        <div class="ends"><span>clean</span><span>worn old tape</span></div>
+      </div>
+      <div class="knob">
+        <div class="knob-top"><span>Space</span><output id="reverbOut"></output></div>
+        <input id="reverb" type="range" min="0" max="0.8" step="0.01" aria-label="Space">
+        <div class="ends"><span>close</span><span>dreamy</span></div>
+      </div>
+    </section>
+
+    <section class="card step">
+      <h2><b>3</b> Pick instruments</h2>
+      <p class="lead">Tap to turn on or off. The bar under each sets its volume.</p>
+      <div class="inst" id="layers"></div>
+    </section>
+
+    <details class="card drawer" id="samplesDrawer">
+      <summary><span>+ Add your own sounds</span><small>drum loops, vocals, rain recordings, drum hits</small></summary>
+      <div id="dropZone" class="drop" role="button" tabindex="0">
+        Drop audio files here or click to browse<br>
+        <small>wav, mp3, m4a or ogg · they play along with the track</small>
+      </div>
+      <input id="sampleInput" type="file" accept="audio/*" multiple hidden>
+      <p class="hint" id="sampleNote"></p>
+      <div id="sampleList"></div>
+    </details>
+
+    <details class="card drawer">
+      <summary><span>⚙ Fine-tune</span><small>key, chords, piano type, tape detail</small></summary>
+      <div class="ctl"><label for="key">Key</label><select id="key"></select></div>
+      <div class="ctl"><label for="prog">Chords</label><select id="prog"></select></div>
+      <div class="ctl"><label for="keys">Piano</label><select id="keys">
+        <option value="rhodes">Electric piano (Rhodes)</option>
+        <option value="felt">Soft felt piano</option>
+      </select></div>
+      <div class="ctl"><label for="dust">Dust</label><input id="dust" type="range" min="0" max="1" step="0.01"><output id="dustOut"></output></div>
+      <div class="ctl"><label for="wobble">Tape wobble</label><input id="wobble" type="range" min="0" max="1" step="0.01"><output id="wobbleOut"></output></div>
+      <p class="hint">Track code <code id="seedLbl"></code>. The same vibe with the same code always plays the same song.</p>
+    </details>
+    </div>
+    <div id="albumsView" class="view" hidden></div>
+  </div>
+</main>
+
+<div class="playerbar" role="region" aria-label="Player">
+  <button id="play" class="primary big">▶ PLAY</button>
+  <div class="np">
+    <div id="trackTitle">—</div>
+    <div id="npStatus">press play, or pick a vibe</div>
+  </div>
+  <div class="pb-actions">
+    <button id="variation" title="Same vibe, new melody and beat">⟳ TRY ANOTHER</button>
+    <button id="rec" class="rec" title="Record what you hear and download it">● RECORD</button>
+  </div>
+</div>
+
+<dialog id="help">
+  <h2>How it works</h2>
+  <ol>
+    <li><b>Choose a vibe.</b> Tap a vibe card and music starts. You can also type a description and hit BREW.</li>
+    <li><b>Shape the sound.</b> Drag the sliders while it plays: speed, bounce, how old it sounds, how much space.</li>
+    <li><b>Pick instruments.</b> Turn parts like drums or rain on and off.</li>
+  </ol>
+  <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
+     Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
+  <p>Optional: open <b>Add your own sounds</b> to drop in your own audio, or <b>Fine-tune</b> for musical details.</p>
+  <button id="helpClose" class="primary">GOT IT</button>
+</dialog>
+
+<script>
+// ---------- music theory ----------
+const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+
+// Voicings are intervals above the chord root. The bass plays the root, so most of
+// these leave it out of the keys — that's the open, jazzy lo-fi sound.
+const VOICE = {
+  'maj7':    [0,4,7,11],
+  'maj9':    [4,7,11,14],
+  'maj7#11': [4,11,14,18],
+  'm7':      [3,7,10,12],
+  'm9':      [3,7,10,14],
+  'm11':     [3,10,14,17],
+  '7':       [4,7,10,12],
+  '9':       [4,10,14,19],
+  '13':      [4,10,14,21],
+  '9sus':    [5,10,14,19],
+};
+
+// [semitones above the tonic, chord type]
+const PROGS = {
+  jazzhop:    {name:'ii – V – I – vi · jazz-hop',      minor:false, chords:[[2,'m9'],[7,'13'],[0,'maj9'],[9,'m9']]},
+  nostalgic:  {name:'IV – iii – ii – I · nostalgic',   minor:false, chords:[[5,'maj9'],[4,'m7'],[2,'m9'],[0,'maj9']]},
+  sunday:     {name:'I – vi – IV – V · sunny',         minor:false, chords:[[0,'maj9'],[9,'m9'],[5,'maj9'],[7,'9sus']]},
+  neosoul:    {name:'IV – III7 – vi – I7 · neo-soul',  minor:false, chords:[[5,'maj9'],[4,'7'],[9,'m9'],[0,'9']]},
+  dreamy:     {name:'Imaj7 – IVmaj7 · dreamy',         minor:false, chords:[[0,'maj9'],[5,'maj7#11']]},
+  rainy:      {name:'i – VI – III – VII · minor drift',minor:true,  chords:[[0,'m9'],[8,'maj7'],[3,'maj9'],[10,'9']]},
+  latenight:  {name:'i – iv · late night',             minor:true,  chords:[[0,'m9'],[5,'m9']]},
+  bittersweet:{name:'VI – VII – i · bittersweet',      minor:true,  chords:[[8,'maj9'],[10,'9sus'],[0,'m9'],[0,'m11']]},
+};
+
+// ---------- patterns (16 steps per bar) ----------
+const KICKS = [
+  [1,0,0,0, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+  [1,0,0,0, 0,0,0,1, 0,0,1,0, 0,0,0,0],
+  [1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,0],
+  [1,0,0,1, 0,0,0,0, 0,0,1,0, 0,0,0,0],
+];
+// [step, length in 16ths, velocity]
+const KEY_PATTERNS = [
+  [[0,15,.7]],
+  [[0,9,.7],[10,6,.45]],
+  [[0,6,.7],[6,4,.4],[12,4,.45]],
+  [[0,14,.65],[14,2,.35]],
+];
+// [step, length in 16ths, interval above the root]
+const BASS_PATTERNS = [
+  [[0,6,0],[10,4,0]],
+  [[0,7,0],[7,2,12],[10,5,0]],
+  [[0,4,0],[6,2,7],[8,6,0]],
+  [[0,10,0],[12,3,7]],
+];
+
+// ---------- state ----------
+const LAYERS = {
+  keys:   {label:'Keys',   db:-9},
+  bass:   {label:'Bass',   db:-7},
+  drums:  {label:'Drums',  db:-4},
+  melody: {label:'Melody', db:-13},
+  pad:    {label:'Pad',    db:-22},
+  vinyl:  {label:'Vinyl',  db:-14},
+  rain:   {label:'Rain',   db:-24},
+};
+
+const BASE = {
+  bpm:80, key:5, prog:'jazzhop', keys:'rhodes',
+  swing:.28, dust:.55, wobble:.4, reverb:.28, seed:1,
+  layers:{
+    keys:{on:true,vol:.8}, bass:{on:true,vol:.75}, drums:{on:true,vol:.75},
+    melody:{on:true,vol:.6}, pad:{on:false,vol:.5}, vinyl:{on:true,vol:.5}, rain:{on:false,vol:.5},
+  },
+};
+
+const PRESETS = {
+  'Late Night Study': {prog:'latenight', bpm:74, key:2, keys:'rhodes'},
+  'Rainy Window':     {prog:'rainy', bpm:70, key:9, keys:'felt', dust:.65, layers:{rain:{on:true,vol:.55}}},
+  'Coffee Shop Jazz': {prog:'jazzhop', bpm:84, key:5, keys:'rhodes', swing:.32},
+  'Sunday Morning':   {prog:'sunday', bpm:86, key:7, keys:'felt', dust:.4, wobble:.25},
+  'Neo-Soul Groove':  {prog:'neosoul', bpm:88, key:3, keys:'rhodes', swing:.36, layers:{drums:{vol:.85}}},
+  'Sleepy Ambient':   {prog:'dreamy', bpm:62, key:4, keys:'felt', reverb:.6, wobble:.55,
+                       layers:{drums:{on:false}, pad:{on:true,vol:.7}, rain:{on:true,vol:.35}}},
+  'Old Tape Memories':{prog:'nostalgic', bpm:76, key:10, dust:.85, wobble:.8},
+  'Bittersweet':      {prog:'bittersweet', bpm:78, key:4, keys:'felt'},
+};
+
+function makeState(over = {}){
+  const s = structuredClone(BASE);
+  for (const [k,v] of Object.entries(over)){
+    if (k === 'layers') for (const [l,lv] of Object.entries(v)) Object.assign(s.layers[l], lv);
+    else s[k] = v;
+  }
+  return s;
+}
+
+let state = makeState(PRESETS['Coffee Shop Jazz']);
+state.seed = Math.floor(Math.random()*1e6);
+
+// ---------- helpers ----------
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+const clamp = (x,a,b) => Math.max(a, Math.min(b, x));
+function mulberry32(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hashText(str){ let h = 2166136261; for (const c of str){ h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); } return (h >>> 0) % 1e6; }
+const keyLabel = (k, minor) => NOTES[k] + (minor ? ' minor' : ' major');
+
+function chordAt(idx){
+  const prog = PROGS[state.prog];
+  const [deg, type] = prog.chords[((idx % prog.chords.length) + prog.chords.length) % prog.chords.length];
+  const pc = (state.key + deg) % 12;
+  let root = 48 + pc; if (root > 53) root -= 12;
+  let bass = root - 12; if (bass < 36) bass += 12;
+  const shift = deg > 6 ? deg - 12 : deg; // how far this chord sits from the tonic, for pitching chops
+  return {name: NOTES[pc] + (type === 'maj7' ? 'maj7' : type), notes: VOICE[type].map(i => root + i), bass, shift};
+}
+
+// ---------- audio graph ----------
+let A = null;
+
+function makeKeys(type){
+  if (type === 'felt') return new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 32,
+    oscillator:{type:'triangle'},
+    envelope:{attack:.004, decay:2.2, sustain:.06, release:1.4},
+  });
+  return new Tone.PolySynth(Tone.FMSynth, {
+    maxPolyphony: 32,
+    harmonicity: 1, modulationIndex: 3.2,
+    oscillator:{type:'sine'}, modulation:{type:'sine'},
+    envelope:{attack:.005, decay:1.6, sustain:.25, release:1.4},
+    modulationEnvelope:{attack:.002, decay:.6, sustain:.1, release:.6},
+  });
+}
+
+function buildAudio(){
+  const out = new Tone.Limiter(-1).toDestination();
+  const fft = new Tone.Analyser('fft', 64); out.connect(fft);
+  const recorder = new Tone.Recorder(); out.connect(recorder);
+  const comp = new Tone.Compressor({threshold:-20, ratio:3, attack:.01, release:.2}).connect(out);
+
+  // the "tape" chain everything musical runs through
+  const reverb = new Tone.Reverb({decay:4.5, preDelay:.03, wet:.28}).connect(comp);
+  const sectionLP = new Tone.Filter({type:'lowpass', frequency:18000, rolloff:-12}).connect(reverb);
+  const dustLP = new Tone.Filter({type:'lowpass', frequency:6000, rolloff:-24, Q:.4}).connect(sectionLP);
+  const hp = new Tone.Filter({type:'highpass', frequency:45}).connect(dustLP);
+  const dist = new Tone.Distortion({distortion:.18, wet:.2, oversample:'2x'}).connect(hp);
+  const wobble = new Tone.Vibrato({frequency:.55, depth:.08, maxDelay:.006}).connect(dist);
+  const bus = new Tone.Gain(1).connect(wobble);
+  // ambience sits outside the tape so it stays crisp
+  const ambient = new Tone.Gain(1).connect(comp);
+
+  const ch = {};
+  for (const name of Object.keys(LAYERS)) ch[name] = new Tone.Channel();
+  for (const name of ['keys','bass','drums','melody','pad']) ch[name].connect(bus);
+  ch.vinyl.connect(ambient); ch.rain.connect(ambient);
+
+  // keys
+  const keysTrem = new Tone.Tremolo({frequency:3.6, depth:.14, spread:60}).connect(ch.keys).start();
+  const keysLP = new Tone.Filter({type:'lowpass', frequency:2800}).connect(keysTrem);
+  const keys = makeKeys(state.keys).connect(keysLP);
+
+  // bass
+  const bass = new Tone.MonoSynth({
+    oscillator:{type:'triangle'},
+    filter:{Q:1, type:'lowpass', rolloff:-24},
+    envelope:{attack:.01, decay:.3, sustain:.7, release:.4},
+    filterEnvelope:{attack:.005, decay:.2, sustain:.4, release:.4, baseFrequency:120, octaves:2},
+  }).connect(ch.bass);
+
+  // drums
+  const drumLP = new Tone.Filter({type:'lowpass', frequency:7000}).connect(ch.drums);
+  const kick = new Tone.MembraneSynth({pitchDecay:.04, octaves:5,
+    envelope:{attack:.001, decay:.38, sustain:0, release:.1}}).connect(drumLP);
+  const snareBP = new Tone.Filter({type:'bandpass', frequency:1700, Q:.7}).connect(drumLP);
+  const snare = new Tone.NoiseSynth({noise:{type:'pink'}, volume:-4,
+    envelope:{attack:.001, decay:.17, sustain:0, release:.05}}).connect(snareBP);
+  const snareBody = new Tone.MembraneSynth({pitchDecay:.01, octaves:2, volume:-12,
+    envelope:{attack:.001, decay:.12, sustain:0, release:.05}}).connect(drumLP);
+  const hatHP = new Tone.Filter({type:'highpass', frequency:7500}).connect(drumLP);
+  const hat = new Tone.NoiseSynth({noise:{type:'white'}, volume:-14,
+    envelope:{attack:.001, decay:.035, sustain:0, release:.01}}).connect(hatHP);
+
+  // melody: soft vibraphone through a dotted-eighth echo
+  const melDelay = new Tone.FeedbackDelay({delayTime:'8n.', feedback:.3, wet:.25}).connect(ch.melody);
+  const melody = new Tone.FMSynth({harmonicity:4, modulationIndex:1.6,
+    envelope:{attack:.003, decay:1.1, sustain:0, release:1},
+    modulationEnvelope:{attack:.002, decay:.3, sustain:0, release:.3}}).connect(melDelay);
+
+  // pad
+  const padLP = new Tone.Filter({type:'lowpass', frequency:750}).connect(ch.pad);
+  const pad = new Tone.PolySynth(Tone.Synth, {maxPolyphony:16,
+    oscillator:{type:'fatsawtooth', count:3, spread:24},
+    envelope:{attack:1.2, decay:.5, sustain:.8, release:2.5}}).connect(padLP);
+
+  // vinyl: hand-made crackle buffer + hiss
+  const sr = Tone.getContext().sampleRate, len = Math.floor(sr * 4);
+  const arr = new Float32Array(len);
+  for (let i = 0; i < len; i++){
+    arr[i] += (Math.random()*2 - 1) * .003;
+    if (Math.random() < .0003){
+      const amp = (Math.random()*.6 + .15) * (Math.random() < .5 ? -1 : 1);
+      for (let j = 0; j < 24 && i + j < len; j++) arr[i+j] += amp * Math.exp(-j / 3);
+    }
+  }
+  const vinylLP = new Tone.Filter({type:'lowpass', frequency:5500}).connect(ch.vinyl);
+  const crackle = new Tone.Player(Tone.ToneAudioBuffer.fromArray(arr)).connect(vinylLP);
+  crackle.loop = true;
+  const hissHP = new Tone.Filter({type:'highpass', frequency:3500}).connect(ch.vinyl);
+  const hiss = new Tone.Noise({type:'pink', volume:-20}).connect(hissHP);
+
+  // rain
+  const rainHP = new Tone.Filter({type:'highpass', frequency:350}).connect(ch.rain);
+  const rainLP = new Tone.Filter({type:'lowpass', frequency:2600}).connect(rainHP);
+  const rainSway = new Tone.AutoFilter({frequency:.07, baseFrequency:900, octaves:1.5, depth:.5}).connect(rainLP).start();
+  const rain = new Tone.Noise({type:'pink'}).connect(rainSway);
+
+  return {out, fft, recorder, reverb, sectionLP, dustLP, dist, wobble, ch, bus, ambient,
+    keys, keysLP, bass, kick, snare, snareBody, hat, drumLP, melody, pad,
+    crackle, hiss, rain};
+}
+
+function setKeysSound(type){
+  if (!A) return;
+  A.keys.releaseAll(); A.keys.disconnect(); A.keys.dispose();
+  A.keys = makeKeys(type).connect(A.keysLP);
+  A.keysLP.frequency.value = type === 'felt' ? 1700 : 2800;
+}
+
+function applyState(){
+  Tone.Transport.bpm.value = state.bpm;
+  Tone.Transport.swing = state.swing;
+  Tone.Transport.swingSubdivision = '16n';
+  if (!A) return;
+  const d = state.dust;
+  A.dustLP.frequency.rampTo(14000 * Math.pow(1800 / 14000, d), .2);
+  A.drumLP.frequency.rampTo(12000 * Math.pow(3000 / 12000, d), .2);
+  A.dist.wet.value = d * .45;
+  A.hiss.volume.value = -34 + d * 16;
+  A.wobble.depth.value = state.wobble * .22;
+  A.wobble.frequency.value = .35 + state.wobble * .5;
+  A.reverb.wet.value = state.reverb;
+  A.keysLP.frequency.value = state.keys === 'felt' ? 1700 : 2800;
+  for (const [name, def] of Object.entries(LAYERS)){
+    const L = state.layers[name];
+    A.ch[name].mute = !L.on;
+    A.ch[name].volume.value = L.vol <= 0.001 ? -Infinity : def.db + Tone.gainToDb(L.vol);
+  }
+}
+
+// ---------- sequencer ----------
+let step = 0, rng = Math.random, pat = null, motif = null, section = null, playing = false;
+
+function reseed(){
+  rng = mulberry32(state.seed);
+  const pick = a => a[Math.floor(rng() * a.length)];
+  pat = {kick:pick(KICKS), keys:pick(KEY_PATTERNS), bass:pick(BASS_PATTERNS), ghost:rng()};
+  motif = null; section = null;
+  for (const sm of samples) sm.pattern = makeChopPattern(sm);
+  updateNowPlaying();
+}
+
+function sectionFor(bar){
+  const b = bar % 40;
+  if (b < 4) return 'intro';
+  if (b < 20) return 'A';
+  if (b < 24) return 'break';
+  return 'B';
+}
+const SECTION_LABEL = {intro:'intro · drums sit out', A:'groove', break:'breakdown · filter down', B:'groove + melody'};
+
+function melodyPool(){
+  const scale = PROGS[state.prog].minor ? [0,3,5,7,10] : [0,2,4,7,9];
+  const pool = [];
+  for (let o = -1; o <= 2; o++) for (const d of scale){
+    const n = 60 + state.key + o*12 + d;
+    if (n >= 63 && n <= 86) pool.push(n);
+  }
+  return pool;
+}
+
+// A two-bar phrase that repeats with small mutations — repetition is what makes
+// a melody feel written rather than random.
+function makeMotif(density){
+  const pool = melodyPool();
+  let idx = Math.floor(pool.length / 2);
+  const m = new Array(32).fill(null);
+  for (let i = 0; i < 32; i += 2){
+    if (rng() < density * (i % 8 === 0 ? 1.6 : 1)){
+      idx = clamp(idx + [-2,-1,-1,0,1,1,2][Math.floor(rng()*7)], 0, pool.length - 1);
+      m[i] = {i:idx, v:.45 + rng()*.3};
+    }
+  }
+  return {pool, notes:m};
+}
+
+function onSection(sec, time){
+  section = sec;
+  if (sec === 'A' || sec === 'break') Tone.Draw.schedule(() => { scene.flash = 1; }, time);
+  const muffled = sec === 'intro' || sec === 'break';
+  A.sectionLP.frequency.rampTo(muffled ? 1500 : 18000, 1.5, time);
+  motif = makeMotif(sec === 'A' ? .2 : sec === 'intro' ? 0 : .36);
+}
+
+function onStep(time){
+  const prog = PROGS[state.prog];
+  const bar = Math.floor(step / 16), s = step % 16;
+  const sec = sectionFor(bar);
+  const bpc = prog.chords.length <= 2 ? 2 : 1;
+  const ci = Math.floor(bar / bpc);
+  const chord = chordAt(ci);
+  const sixteenth = Tone.Time('16n').toSeconds();
+  if (s === 0 && bar === ALBUM_BARS && currentTrack) Tone.Draw.schedule(nextTrack, time);
+  const h = () => rng() * .012; // humanize: nothing lands exactly on the grid
+
+  if (s === 0){
+    if (sec !== section) onSection(sec, time);
+    Tone.Draw.schedule(() => {
+      document.getElementById('chordName').textContent = chord.name;
+      document.getElementById('sectionName').textContent = `bar ${bar % 40 + 1} · ${SECTION_LABEL[sec]}`;
+    }, time);
+  }
+  const groove = sec === 'A' || sec === 'B';
+  if (s % 2 === 0) Tone.Draw.schedule(() => sceneBeat(s % 4 === 0), time);
+
+  // keys: strummed slightly, velocities wander
+  for (const [st, len, vel] of pat.keys) if (st === s){
+    chord.notes.forEach((n, i) =>
+      A.keys.triggerAttackRelease(mtof(n), len * sixteenth, time + i * .014 + h(), clamp(vel * (.85 + rng() * .3), .1, 1)));
+  }
+
+  // pad holds the whole chord
+  if (s === 0 && bar % bpc === 0)
+    A.pad.triggerAttackRelease(chord.notes.map(n => mtof(n + 12)), bpc * 16 * sixteenth * .97, time, .4);
+
+  // bass
+  if (sec !== 'intro'){
+    for (const [st, len, iv] of pat.bass) if (st === s)
+      A.bass.triggerAttackRelease(mtof(chord.bass + iv), len * sixteenth, time + h(), .8);
+    if (s === 15 && bar % bpc === bpc - 1 && rng() < .35)
+      A.bass.triggerAttackRelease(mtof(chordAt(ci + 1).bass - 1), sixteenth * .9, time, .6);
+  }
+
+  // drums
+  // drums (your own one-shots replace the synth hits when loaded)
+  if (groove){
+    const kS = shot('kick'), sS = shot('snare'), hS = shot('hat');
+    if (pat.kick[s]) kS ? fireShot(kS, time + h(), .9) : A.kick.triggerAttackRelease('C1', '8n', time + h(), .9);
+    if (s === 4 || s === 12){
+      if (sS) fireShot(sS, time + h() + .006, .85);
+      else {
+        A.snare.triggerAttackRelease('16n', time + h() + .006, .8);
+        A.snareBody.triggerAttackRelease('D3', '16n', time + .006, .6);
+      }
+    }
+    if ((s === 7 || s === 15) && rng() < pat.ghost * .5)
+      sS ? fireShot(sS, time + h(), .2) : A.snare.triggerAttackRelease('32n', time + h(), .18);
+    const hatVel = s % 2 === 0 ? (s % 4 === 0 ? .55 : .32) : (rng() < .12 ? .15 : 0);
+    if (hatVel) hS ? fireShot(hS, time + h(), hatVel + .2) : A.hat.triggerAttackRelease('32n', time + h(), hatVel);
+  }
+
+  for (const sm of samples) sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth});
+
+  // melody
+  if (motif && sec !== 'intro'){
+    const pos = step % 32;
+    if (pos === 0 && rng() < .3){
+      const live = motif.notes.filter(Boolean);
+      if (live.length){ const n = live[Math.floor(rng()*live.length)];
+        n.i = clamp(n.i + (rng() < .5 ? -1 : 1), 0, motif.pool.length - 1); }
+    }
+    const note = motif.notes[pos];
+    if (note){
+      let gap = 2; while (gap < 8 && !motif.notes[(pos + gap) % 32]) gap += 2;
+      A.melody.triggerAttackRelease(mtof(motif.pool[note.i]), gap * sixteenth * .9, time + h(), note.v);
+    }
+  }
+}
+
+// ---------- your samples ----------
+const SAMPLE_MODES = {
+  loop:     'Melody loop',
+  drumloop: 'Beat loop',
+  chop:     'Chop it up',
+  texture:  'Background sound',
+  kick:     'Use as kick drum',
+  snare:    'Use as snare',
+  hat:      'Use as hi-hat',
+};
+const SAMPLE_HELP = {
+  loop:     'Loops the whole time, stretched to fit the tempo.',
+  drumloop: 'Loops only while the drums play (not in the intro or breakdown).',
+  chop:     'Cut into slices and replayed in a pattern, pitched to follow the chords.',
+  texture:  'Plays underneath everything, like rain or café noise.',
+  kick:     'Replaces the built-in kick drum.',
+  snare:    'Replaces the built-in snare.',
+  hat:      'Replaces the built-in hi-hat.',
+};
+const LOOP_MODES = ['loop', 'drumloop'];
+let samples = [], nextSampleId = 1;
+
+function guessMode(name, dur){
+  const n = name.toLowerCase();
+  if (dur < .8){
+    if (/kick|bd|bass ?drum/.test(n)) return 'kick';
+    if (/hat|hh|shaker|cymbal/.test(n)) return 'hat';
+    return 'snare';
+  }
+  if (/rain|ambien|field|room|vinyl|noise|cafe|street|nature|wind|wave/.test(n) || dur > 20) return 'texture';
+  if (/drum|break|beat|perc|groove/.test(n)) return 'drumloop';
+  if (/vox|vocal|chop|voice|choir/.test(n)) return 'chop';
+  return 'loop';
+}
+
+// Pick the bar count that needs the least speed change to fit the current tempo.
+function guessBars(dur){
+  const barSec = 240 / state.bpm;
+  return [1,2,4,8].reduce((best, b) =>
+    Math.abs(Math.log(dur / (b * barSec))) < Math.abs(Math.log(dur / (best * barSec))) ? b : best, 1);
+}
+
+// Find hits by looking for sudden jumps in loudness; fall back to equal slices.
+function detectSlices(buf){
+  const data = buf.getChannelData(0), sr = buf.sampleRate, win = 512, dur = buf.duration;
+  const onsets = [0];
+  let avg = 0;
+  for (let i = 0; i + win < data.length; i += win){
+    let e = 0; for (let j = i; j < i + win; j++) e += data[j] * data[j];
+    e = Math.sqrt(e / win);
+    const t = i / sr;
+    if (e > avg * 1.8 && e > .02 && t - onsets[onsets.length - 1] > .09) onsets.push(t);
+    avg = avg * .9 + e * .1;
+  }
+  let pts = onsets.length >= 4 ? onsets.slice(0, 16) : Array.from({length:8}, (_, i) => i * dur / 8);
+  return pts.map((t, i) => [t, pts[i + 1] ?? dur]);
+}
+
+function makeChopPattern(sm){
+  const r = mulberry32(state.seed + sm.id * 7919);
+  const p = new Array(32).fill(null);
+  let last = 0;
+  for (let i = 0; i < 32; i++){
+    if (r() < (i % 2 === 0 ? .4 : .1)){
+      last = r() < .45 ? last : Math.floor(r() * sm.slices.length); // repeats = stutters
+      p[i] = last;
+    }
+  }
+  return p;
+}
+
+function routeSample(sm){
+  sm.channel.disconnect();
+  sm.channel.connect(sm.mode === 'texture' ? A.ambient : A.bus);
+  sm.player.loop = sm.mode === 'texture';
+  sm.channel.volume.value = sm.vol <= .001 ? -Infinity : -4 + Tone.gainToDb(sm.vol);
+}
+
+function startTexture(sm){
+  sm.player.playbackRate = Math.pow(2, sm.pitch / 12);
+  sm.player.start();
+  sm.active = true;
+}
+
+const shot = kind => samples.find(sm => sm.mode === kind);
+
+function fireShot(sm, time, vel){
+  sm.player.playbackRate = Math.pow(2, sm.pitch / 12);
+  sm.player.volume.setValueAtTime(Tone.gainToDb(vel), time);
+  sm.player.start(time);
+}
+
+function sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth}){
+  if (LOOP_MODES.includes(sm.mode)){
+    const allowed = sm.mode === 'loop' || groove;
+    if (!allowed){
+      if (sm.active && s === 0){ sm.player.stop(time); sm.active = false; }
+      return;
+    }
+    // Varispeed fit: the loop is sped up or slowed down to land on the bar, so its
+    // pitch moves with the tempo — the same thing that happens slowing a record down.
+    if (s === 0 && (bar % sm.bars === 0 || !sm.active)){
+      const loopSec = sm.bars * 240 / state.bpm;
+      const rate = sm.buffer.duration / loopSec;
+      sm.player.playbackRate = rate;
+      sm.player.start(time, (bar % sm.bars) / sm.bars * sm.buffer.duration);
+      sm.active = true;
+    }
+  } else if (sm.mode === 'chop'){
+    if (sec === 'intro') return;
+    const pos = (bar % 2) * 16 + s, ix = sm.pattern[pos];
+    if (ix == null) return;
+    const [a, b] = sm.slices[ix];
+    const rate = Math.pow(2, (sm.pitch + chord.shift) / 12);
+    let gap = 1; while (gap < 8 && sm.pattern[(pos + gap) % 32] == null) gap++;
+    sm.player.playbackRate = rate;
+    sm.player.volume.setValueAtTime(0, time);
+    sm.player.start(time, a, Math.min(b - a, gap * sixteenth * rate));
+  }
+}
+
+async function addSampleFiles(files){
+  await ensureAudio();
+  for (const file of files){
+    if (!file.type.startsWith('audio') && !/\.(wav|mp3|m4a|aac|ogg|flac|aiff?)$/i.test(file.name)) continue;
+    try {
+      const decoded = await Tone.getContext().decodeAudioData(await file.arrayBuffer());
+      const buffer = new Tone.ToneAudioBuffer(decoded);
+      const name = file.name.replace(/\.[^.]+$/, '');
+      const sm = {id: nextSampleId++, name, buffer, vol: .8, pitch: 0, active: false};
+      sm.mode = guessMode(name, buffer.duration);
+      sm.bars = guessBars(buffer.duration);
+      sm.slices = detectSlices(buffer);
+      sm.pattern = makeChopPattern(sm);
+      sm.player = new Tone.Player(buffer);
+      sm.player.fadeOut = .01;
+      sm.channel = new Tone.Channel();
+      sm.player.connect(sm.channel);
+      routeSample(sm);
+      samples.push(sm);
+      if (playing && sm.mode === 'texture') startTexture(sm);
+    } catch (err){
+      $('sampleNote').textContent = `Couldn't read ${file.name} — try WAV or MP3.`;
+    }
+  }
+  renderSamples();
+}
+
+function setSampleMode(sm, mode){
+  sm.player.stop(); sm.active = false;
+  sm.mode = mode;
+  routeSample(sm);
+  if (playing && mode === 'texture') startTexture(sm);
+}
+
+function removeSample(sm){
+  sm.player.stop(); sm.player.dispose(); sm.channel.dispose();
+  samples = samples.filter(x => x !== sm);
+  renderSamples();
+}
+
+function drawWave(canvas, sm){
+  const g = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+  const data = sm.buffer.getChannelData(0), step = Math.max(1, Math.floor(data.length / W));
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#8fb3d9';
+  for (let x = 0; x < W; x++){
+    let peak = 0;
+    for (let i = x * step; i < (x + 1) * step && i < data.length; i += 4) peak = Math.max(peak, Math.abs(data[i]));
+    const h = Math.max(1, peak * H * .9);
+    g.fillRect(x, (H - h) / 2, 1, h);
+  }
+  if (sm.mode === 'chop'){
+    g.fillStyle = '#f2a65a';
+    for (const [a] of sm.slices) g.fillRect(a / sm.buffer.duration * W, 0, 2, H);
+  }
+}
+
+function renderSamples(){
+  const list = $('sampleList');
+  list.innerHTML = samples.map(sm => {
+    const isLoop = LOOP_MODES.includes(sm.mode);
+    const info = sm.mode === 'chop' ? `${sm.slices.length} slices` : isLoop ? `${sm.bars} bar${sm.bars > 1 ? 's' : ''}` : '';
+    const param = isLoop
+      ? `<label>Bars <select data-k="bars">${[1,2,4,8].map(b => `<option ${b === sm.bars ? 'selected' : ''}>${b}</option>`).join('')}</select></label>`
+      : `<label>Pitch <input type="range" data-k="pitch" min="-12" max="12" step="1" value="${sm.pitch}"><output>${sm.pitch > 0 ? '+' : ''}${sm.pitch}</output></label>`;
+    return `<div class="sample" data-id="${sm.id}">
+      <div class="sname" title="${sm.name.replace(/"/g, '&quot;')}">${sm.name.replace(/</g, '&lt;')}<small>${sm.buffer.duration.toFixed(1)}s ${info ? '· ' + info : ''}</small></div>
+      <canvas class="wave" width="400" height="56"></canvas>
+      <select data-k="mode">${Object.entries(SAMPLE_MODES).map(([k, l]) => `<option value="${k}" ${k === sm.mode ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <label>Vol <input type="range" data-k="vol" min="0" max="1" step="0.01" value="${sm.vol}"></label>
+      ${param}
+      <div class="sdesc">${SAMPLE_HELP[sm.mode]}</div>
+      <button class="x" data-k="remove" aria-label="Remove ${sm.name.replace(/"/g, '&quot;')}">✕</button>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.sample').forEach(row => drawWave(row.querySelector('canvas'), samples.find(sm => sm.id === +row.dataset.id)));
+  $('sampleNote').textContent = samples.some(sm => sm.mode === 'drumloop') && state.layers.drums.on
+    ? 'Tip: you added a beat loop. Turn off Drums in step 3 if the two beats clash.' : '';
+}
+
+function bindSamplesUI(){
+  const zone = $('dropZone'), input = $('sampleInput');
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+  input.addEventListener('change', () => { addSampleFiles([...input.files]); input.value = ''; });
+  document.addEventListener('dragover', e => { e.preventDefault(); $('samplesDrawer').open = true; zone.classList.add('over'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) zone.classList.remove('over'); });
+  document.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('over');
+    addSampleFiles([...e.dataTransfer.files]);
+  });
+
+  const find = el => samples.find(sm => sm.id === +el.closest('.sample').dataset.id);
+  $('sampleList').addEventListener('input', e => {
+    const k = e.target.dataset.k; if (!k) return;
+    const sm = find(e.target);
+    if (k === 'vol'){ sm.vol = +e.target.value; routeSample(sm); }
+    if (k === 'pitch'){
+      sm.pitch = +e.target.value;
+      e.target.nextElementSibling.textContent = (sm.pitch > 0 ? '+' : '') + sm.pitch;
+      if (sm.mode === 'texture') sm.player.playbackRate = Math.pow(2, sm.pitch / 12);
+    }
+  });
+  $('sampleList').addEventListener('change', e => {
+    const k = e.target.dataset.k; if (!k) return;
+    const sm = find(e.target);
+    if (k === 'mode'){ setSampleMode(sm, e.target.value); renderSamples(); }
+    if (k === 'bars'){ sm.bars = +e.target.value; sm.active = false; renderSamples(); }
+  });
+  $('sampleList').addEventListener('click', e => {
+    if (e.target.dataset.k === 'remove') removeSample(find(e.target));
+  });
+}
+
+// ---------- transport ----------
+let building = null;
+function ensureAudio(){
+  if (!building) building = (async () => {
+    A = buildAudio();
+    await A.reverb.ready;
+    Tone.Transport.scheduleRepeat(t => { onStep(t); step++; }, '16n');
+    applyState();
+  })();
+  return building;
+}
+
+async function play(){
+  await Tone.start();
+  await ensureAudio();
+  applyState();
+  reseed();
+  step = 0;
+  A.crackle.start(); A.hiss.start(); A.rain.start();
+  for (const sm of samples) if (sm.mode === 'texture') startTexture(sm);
+  Tone.Transport.start('+0.1');
+  playing = true;
+  $('play').textContent = '■ STOP';
+  updateNowPlaying();
+}
+
+function stop(){
+  Tone.Transport.stop();
+  A.keys.releaseAll(); A.pad.releaseAll();
+  A.crackle.stop(); A.hiss.stop(); A.rain.stop();
+  for (const sm of samples){ sm.player.stop(); sm.active = false; }
+  playing = false;
+  $('play').textContent = '▶ PLAY';
+  $('sectionName').textContent = 'paused';
+  updateNowPlaying();
+}
+
+let recording = false;
+async function toggleRecord(){
+  const btn = document.getElementById('rec');
+  if (!recording){
+    if (!playing) await play();
+    A.recorder.start();
+    recording = true; btn.classList.add('on'); btn.textContent = '■ STOP & SAVE';
+  } else {
+    const blob = await A.recorder.stop();
+    recording = false; btn.classList.remove('on'); btn.textContent = '● RECORD';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${currentTitle().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}.webm`;
+    a.click();
+  }
+}
+
+// ---------- vibe text → settings ----------
+function vibeFromText(text){
+  const t = text.toLowerCase();
+  const has = (...w) => w.some(x => t.includes(x));
+  const s = makeState();
+  const heard = [];
+  const tag = (word, fn) => { heard.push(word); fn(); };
+
+  if (has('jazz','coffee','cafe','café','bookstore')) tag('jazz', () => { s.prog = 'jazzhop'; s.keys = 'rhodes'; s.bpm = 84; s.swing = .32; });
+  if (has('soul','groove','neo')) tag('soul', () => { s.prog = 'neosoul'; s.bpm = 88; s.swing = .36; });
+  if (has('sun','morning','summer','happy','bright','spring','warm')) tag('bright', () => { s.prog = 'sunday'; s.bpm = 86; s.key = 7; });
+  if (has('night','midnight','late','moon','city','neon')) tag('night', () => { s.prog = 'latenight'; s.bpm = 74; s.key = 2; });
+  if (has('rain','storm','window','grey','gray','cloud')) tag('rain', () => { s.prog = 'rainy'; s.key = 9; s.layers.rain = {on:true, vol:.55}; });
+  if (has('sad','lonely','miss','melanchol','autumn','heartbreak','bittersweet')) tag('melancholy', () => { s.prog = 'bittersweet'; s.bpm = Math.min(s.bpm, 74); s.key = 4; });
+  if (has('nostalg','memory','memories','childhood','vhs','tape','90s','old')) tag('nostalgia', () => { s.dust = .82; s.wobble = .75; if (s.prog === BASE.prog) s.prog = 'nostalgic'; });
+  if (has('sleep','ambient','float','dream','space','calm','meditat')) tag('ambient', () => {
+    s.prog = 'dreamy'; s.bpm = 62; s.reverb = .6; s.wobble = Math.max(s.wobble, .5);
+    s.layers.drums.on = false; s.layers.pad = {on:true, vol:.7}; });
+  if (has('boom bap','boombap','hip hop','hiphop','head nod','beat')) tag('boom bap', () => { s.bpm = Math.max(s.bpm, 86); s.layers.drums.vol = .9; });
+  if (has('study','focus','work','read','code')) tag('focus', () => { s.layers.melody.vol = .4; });
+  if (has('piano','felt','soft','gentle')) tag('soft piano', () => { s.keys = 'felt'; });
+  if (has('rhodes','electric','ep ')) tag('rhodes', () => { s.keys = 'rhodes'; });
+  if (has('vinyl','crackle','record')) tag('vinyl', () => { s.layers.vinyl = {on:true, vol:.75}; });
+  if (has('clean','crisp','modern')) tag('clean', () => { s.dust = .25; s.wobble = .15; });
+
+  const bpm = t.match(/(\d{2,3})\s*bpm/);
+  if (bpm) { s.bpm = clamp(+bpm[1], 58, 96); heard.push(`${s.bpm} bpm`); }
+  const key = t.match(/\bin\s+([a-g])\s*(#|b|sharp|flat)?\s*(major|minor|maj|min)?\b/);
+  if (key){
+    let k = NOTES.indexOf(key[1].toUpperCase());
+    if (k < 0) k = {D:2,E:4,G:7,A:9,B:11}[key[1].toUpperCase()];
+    if (key[2] === '#' || key[2] === 'sharp') k++;
+    if (key[2] === 'b' || key[2] === 'flat') k--;
+    s.key = (k + 12) % 12;
+    const wantMinor = key[3] && key[3].startsWith('min');
+    const wantMajor = key[3] && key[3].startsWith('maj');
+    if (wantMinor && !PROGS[s.prog].minor) s.prog = 'rainy';
+    if (wantMajor && PROGS[s.prog].minor) s.prog = 'jazzhop';
+    heard.push(keyLabel(s.key, PROGS[s.prog].minor));
+  }
+
+  s.seed = hashText(t || String(Math.random()));
+  // the same words always brew the same track, but different words nudge the tempo a little
+  if (!bpm) s.bpm = clamp(s.bpm + (s.seed % 7) - 3, 58, 96);
+  return {s, heard};
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+
+const VIBE_INFO = {
+  'Late Night Study': {ic:'☾', ds:'slow, calm, focused'},
+  'Rainy Window':     {ic:'☂', ds:'soft piano + rain'},
+  'Coffee Shop Jazz': {ic:'♨', ds:'warm jazzy head-nod'},
+  'Sunday Morning':   {ic:'☀', ds:'bright and easy'},
+  'Neo-Soul Groove':  {ic:'♫', ds:'bouncy and smooth'},
+  'Sleepy Ambient':   {ic:'☁', ds:'no drums, floaty'},
+  'Old Tape Memories':{ic:'▣', ds:'extra worn and wobbly'},
+  'Bittersweet':      {ic:'❦', ds:'wistful, a little sad'},
+};
+const LAYER_INFO = {
+  keys:'the chords', bass:'low end', drums:'the beat', melody:'little tune on top',
+  pad:'soft haze', vinyl:'record crackle', rain:'rain outside',
+};
+const SHAPE_FMT = {
+  bpm: v => `${v} BPM`,
+  swing: v => v < .12 ? 'straight' : v < .3 ? 'a little' : 'lots',
+  vintage: v => v < .3 ? 'clean' : v < .65 ? 'dusty' : 'very worn',
+  reverb: v => v < .2 ? 'close' : v < .45 ? 'roomy' : 'dreamy',
+  dust: v => Math.round(v*100) + '%',
+  wobble: v => Math.round(v*100) + '%',
+};
+
+let currentVibe = null;
+
+// Every seed gets a name, so a track feels like a song rather than a number.
+const NAME_A = ['Moonlit','Rainy','Quiet','Velvet','Faded','Midnight','Amber','Sleepy','Lost','Golden','Hollow','Distant','Candlelit','Misty'];
+const NAME_B = ['Library','Corridor','Tower','Lantern','Courtyard','Window','Archive','Staircase','Garden','Chapel','Balcony','Hallway','Observatory','Cellar'];
+function trackName(seed){
+  const r = mulberry32(seed * 13 + 1);
+  return `${NAME_A[Math.floor(r() * NAME_A.length)]} ${NAME_B[Math.floor(r() * NAME_B.length)]}`;
+}
+
+function updateNowPlaying(){
+  $('seedLbl').textContent = state.seed;
+  $('trackTitle').textContent = currentTitle();
+  if (currentTrack){
+    const al = ALBUMS[currentTrack.a];
+    $('npStatus').textContent = `${playing ? '♪ ' : ''}${al.title} · track ${currentTrack.t + 1} of ${al.tracks.length}`;
+  } else {
+    const vibe = currentVibe || 'your mix';
+    $('npStatus').textContent = playing ? `♪ ${vibe} · ${state.bpm} BPM` : `${vibe} · press play`;
+  }
+  if (!$('albumsView').hidden) renderAlbums();
+}
+
+function buildUI(){
+  $('key').innerHTML = NOTES.map((n,i) => `<option value="${i}">${n}</option>`).join('');
+  $('prog').innerHTML = Object.entries(PROGS).map(([k,p]) => `<option value="${k}">${p.name}</option>`).join('');
+  $('presets').innerHTML = Object.keys(PRESETS).map(n => `
+    <button class="vibe" data-preset="${n}">
+      <span class="ic" aria-hidden="true">${VIBE_INFO[n].ic}</span>
+      <span class="txt"><span class="nm">${n}</span><span class="ds">${VIBE_INFO[n].ds}</span></span>
+    </button>`).join('');
+  $('layers').innerHTML = Object.entries(LAYERS).map(([k,l]) => `
+    <div class="tile">
+      <button data-layer="${k}" aria-pressed="false">
+        <span class="nm">${l.label}</span><span class="ds">${LAYER_INFO[k]}</span>
+      </button>
+      <input type="range" min="0" max="1" step="0.01" data-layervol="${k}" aria-label="${l.label} volume">
+    </div>`).join('');
+
+  for (const id of ['bpm','swing','reverb','dust','wobble']){
+    $(id).addEventListener('input', e => {
+      state[id] = +e.target.value; syncUI(); applyState();
+    });
+  }
+  // one friendly "Vintage" slider drives the two tape controls together
+  $('vintage').addEventListener('input', e => {
+    const v = +e.target.value;
+    state.dust = v; state.wobble = clamp(v * .9, 0, 1);
+    syncUI(); applyState();
+  });
+
+  $('key').addEventListener('change', e => { state.key = +e.target.value; });
+  $('prog').addEventListener('change', e => { state.prog = e.target.value; motif = null; section = null; });
+  $('keys').addEventListener('change', e => { state.keys = e.target.value; setKeysSound(state.keys); });
+
+  $('layers').addEventListener('click', e => {
+    const btn = e.target.closest('[data-layer]'); if (!btn) return;
+    const L = state.layers[btn.dataset.layer];
+    L.on = !L.on;
+    syncUI(); applyState(); renderSamples();
+  });
+  $('layers').addEventListener('input', e => {
+    const k = e.target.dataset.layervol; if (!k) return;
+    state.layers[k].vol = +e.target.value;
+    if (state.layers[k].vol > 0) state.layers[k].on = true;
+    syncUI(); applyState();
+  });
+
+  $('presets').addEventListener('click', e => {
+    const btn = e.target.closest('[data-preset]'); if (!btn) return;
+    const name = btn.dataset.preset;
+    const seed = name === currentVibe ? Math.floor(Math.random()*1e6) : state.seed;
+    state = makeState(PRESETS[name]); state.seed = seed;
+    currentVibe = name; currentTrack = null;
+    $('vibeNote').textContent = '';
+    loadState();
+  });
+
+  $('play').addEventListener('click', () => playing ? stop() : play());
+  $('variation').addEventListener('click', () => {
+    currentTrack = null;
+    state.seed = Math.floor(Math.random()*1e6);
+    reseed();
+    if (!playing) play();
+  });
+  $('rec').addEventListener('click', toggleRecord);
+
+  const brew = () => {
+    const text = $('vibe').value.trim();
+    if (!text){ $('vibe').focus(); return; }
+    const {s, heard} = vibeFromText(text);
+    state = s;
+    currentTrack = null;
+    currentVibe = `"${text.length > 28 ? text.slice(0, 26) + '…' : text}"`;
+    loadState();
+    $('vibeNote').textContent = heard.length
+      ? `Heard: ${heard.join(', ')}. Now playing ${PROGS[s.prog].minor ? 'minor' : 'major'} chords at ${s.bpm} BPM.`
+      : `No words I know yet, so these words picked a random song. Try rain, jazz, night, sunny or sleepy.`;
+  };
+  $('brew').addEventListener('click', brew);
+  $('vibe').addEventListener('keydown', e => { if (e.key === 'Enter') brew(); });
+
+  $('helpBtn').addEventListener('click', () => $('help').showModal());
+  $('helpClose').addEventListener('click', () => $('help').close());
+}
+
+function loadState(){
+  syncUI(); applyState(); setKeysSound(state.keys);
+  reseed();
+  if (!playing) play();
+}
+
+function syncUI(){
+  for (const id of ['bpm','swing','reverb','dust','wobble']){
+    $(id).value = state[id]; $(id + 'Out').textContent = SHAPE_FMT[id](state[id]);
+  }
+  $('vintage').value = state.dust; $('vintageOut').textContent = SHAPE_FMT.vintage(state.dust);
+  $('key').value = state.key; $('prog').value = state.prog; $('keys').value = state.keys;
+  for (const [k,L] of Object.entries(state.layers)){
+    document.querySelector(`[data-layer="${k}"]`).setAttribute('aria-pressed', L.on);
+    document.querySelector(`[data-layervol="${k}"]`).value = L.vol;
+  }
+  document.querySelectorAll('.vibe').forEach(b => b.classList.toggle('active', b.dataset.preset === currentVibe));
+  updateNowPlaying();
+}
+
+// ---------- pixel castle scene ----------
+// Everything is drawn at 320×150 and scaled up with pixelated rendering.
+const SW = 320, SH = 150, WALL_Y = 124;
+const scene = {beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, bats:[], notes:[], drops:[]};
+const SKY = ['#0a0620','#110a2e','#1a0f3c','#241449','#2f1955','#3c1e5e','#4b2366'];
+
+const HERO_TOP = [
+  '...kkkk...',
+  '..khhhhk..',
+  '.khhhhhhk.',
+  '.kphhssek.',
+  '.kphhsssk.',
+  '..khhhhk..',
+  '.kcccccck.',
+  'kcccccccck',
+  'kcchhhhcck',
+  '.kchhhhck.',
+  '..khhhhk..',
+];
+const HERO_LEGS = [
+  ['..kh..hk..', '.kb....bk.', '.kk....kk.'],
+  ['...khhk...', '...kbbk...', '...kkkk...'],
+];
+const HERO_COLORS = {k:'#07040f', h:'#3d2f7a', s:'#f1c9a5', e:'#07040f', p:'#4fd1c5', c:'#c2334d', b:'#6b4426'};
+const BAT = [
+  ['k.....k', 'kk.k.kk', '.kkkkk.', '..k.k..'],
+  ['.......', '..kkk..', 'kkkkkkk', 'k.k.k.k'],
+];
+const NOTE = ['..kk', '..kk', '..k.', 'kkk.', 'kk..'];
+
+function offscreen(w, h, paint){
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); paint(x); return c;
+}
+
+const skyCanvas = offscreen(SW, SH, x => {
+  const band = Math.ceil(WALL_Y / SKY.length);
+  SKY.forEach((col, i) => { x.fillStyle = col; x.fillRect(0, i * band, SW, band); });
+  // dithered seams between bands
+  for (let i = 1; i < SKY.length; i++){
+    x.fillStyle = SKY[i];
+    for (let px = 0; px < SW; px += 2) x.fillRect(px + (i % 2), i * band - 1, 1, 1);
+    x.fillStyle = SKY[i - 1];
+    for (let px = 0; px < SW; px += 2) x.fillRect(px + ((i + 1) % 2), i * band, 1, 1);
+  }
+});
+
+const moonCanvas = offscreen(44, 44, x => {
+  for (let y = 0; y < 44; y++) for (let px = 0; px < 44; px++){
+    const d = Math.hypot(px - 22, y - 22);
+    if (d < 11){ x.fillStyle = '#efe6c8'; x.fillRect(px, y, 1, 1); }
+    else if (d < 18 && (px + y) % 2 === 0){ x.fillStyle = d < 14 ? 'rgba(239,230,200,.35)' : 'rgba(239,230,200,.12)'; x.fillRect(px, y, 1, 1); }
+  }
+  x.fillStyle = '#cfc3a0';
+  [[17,18,3],[25,24,2],[21,27,2],[26,16,1]].forEach(([cx, cy, r]) => x.fillRect(cx, cy, r, r));
+});
+
+const castleWindows = [];
+const castleCanvas = offscreen(480, 100, x => {
+  const r = mulberry32(7);
+  const stoneCol = '#1b1340', lit = '#2b2063';
+  const block = (px, w, h, spire) => {
+    const top = 100 - h;
+    x.fillStyle = stoneCol; x.fillRect(px, top, w, h);
+    x.fillStyle = lit; x.fillRect(px, top, 1, h);
+    x.fillStyle = stoneCol;
+    if (spire){
+      for (let k = 0; k < spire; k++){
+        const ww = Math.max(1, Math.round(w * (1 - k / spire)));
+        x.fillRect(px + Math.floor((w - ww) / 2), top - k - 1, ww, 1);
+      }
+      x.fillStyle = '#c2334d'; x.fillRect(px + Math.floor(w / 2), top - spire - 4, 3, 2);
+      x.fillStyle = stoneCol; x.fillRect(px + Math.floor(w / 2), top - spire - 4, 1, 4);
+    } else {
+      for (let i = 0; i < w; i += 4) x.fillRect(px + i, top - 3, 2, 3);
+    }
+    for (let wy = top + 6; wy < 92; wy += 10)
+      for (let wx = px + 3; wx < px + w - 4; wx += 7)
+        if (r() < .45) castleWindows.push({x: wx, y: wy, seed: r()});
+  };
+  [[8,18,52,14],[26,40,32,0],[66,22,70,20],[88,58,28,0],[146,16,56,12],[162,34,40,0],
+   [196,26,82,24],[222,52,26,0],[274,18,48,10],[292,62,34,0],[354,24,64,18],[378,48,30,0],[426,20,44,12],[446,34,24,0]]
+    .forEach(([px, w, h, sp]) => block(px, w, h, sp));
+});
+
+const stars = Array.from({length:70}, (_, i) => {
+  const r = mulberry32(i * 31 + 3);
+  return {x: Math.floor(r() * SW), y: Math.floor(r() * 90), p: r() * 6.28, s: .6 + r() * 2};
+});
+
+function sprite(g, rows, colors, x, y){
+  for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++){
+    const col = colors[rows[j][i]]; if (!col) continue;
+    g.fillStyle = col; g.fillRect(Math.round(x) + i, Math.round(y) + j, 1, 1);
+  }
+}
+
+function ridge(g, color, base, amp, freq, offset, parallax){
+  g.fillStyle = color;
+  const sx = scene.scroll * parallax;
+  for (let x = 0; x < SW; x++){
+    const wx = x + sx;
+    const h = Math.round(amp * (Math.sin(wx * freq + offset) * .6 + Math.sin(wx * freq * 2.7 + offset * 2) * .4));
+    g.fillRect(x, base - h, 1, SH - base + h);
+  }
+}
+
+function dither(g, cx, cy, r, color){
+  g.fillStyle = color;
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++)
+    if ((x + y) % 2 === 0 && x * x + y * y < r * r) g.fillRect(cx + x, cy + y, 1, 1);
+}
+
+function drawScene(){
+  const c = $('viz'), g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  const now = performance.now() / 1000, dt = Math.min(.1, now - scene.last);
+  scene.last = now;
+  scene.scroll += dt * (playing ? 10 * state.bpm / 80 : 2);
+  const t = now, beat = scene.beat;
+
+  g.drawImage(skyCanvas, 0, 0);
+
+  for (const s of stars){
+    const tw = Math.sin(t * s.s + s.p);
+    if (tw < -.3) continue;
+    g.fillStyle = tw > .85 ? '#ffffff' : '#a99be0';
+    g.fillRect(s.x, s.y, 1, 1);
+    if (tw > .95){ g.fillStyle = 'rgba(255,255,255,.45)'; g.fillRect(s.x - 1, s.y, 3, 1); g.fillRect(s.x, s.y - 1, 1, 3); }
+  }
+
+  g.drawImage(moonCanvas, 242, 6 - Math.round(beat));
+
+  // bats
+  if (Math.random() < .003 && scene.bats.length < 3) scene.bats.push({x: SW + 8, y: 18 + Math.random() * 40, v: 18 + Math.random() * 14, p: Math.random() * 6});
+  for (const b of scene.bats){
+    b.x -= b.v * dt;
+    sprite(g, BAT[Math.floor(t * 7 + b.p) % 2], {k:'#07040f'}, b.x, b.y + Math.sin(t * 3 + b.p) * 4);
+  }
+  scene.bats = scene.bats.filter(b => b.x > -10);
+
+  ridge(g, '#1e1547', 92, 12, .018, 1, .12);
+  ridge(g, '#170f38', 104, 8, .031, 4, .25);
+
+  // castle, wrapping
+  const cx = -((scene.scroll * .45) % 480);
+  for (const off of [cx, cx + 480]){
+    g.drawImage(castleCanvas, Math.round(off), 18);
+    for (const w of castleWindows){
+      const wx = Math.round(off + w.x);
+      if (wx < -3 || wx > SW) continue;
+      const on = Math.sin(t * .7 + w.seed * 40) > -.4;
+      if (!on) continue;
+      g.fillStyle = w.seed > .5 + beat * .3 ? '#e8692c' : '#ffcf6b';
+      g.fillRect(wx, 18 + w.y, 2, 3);
+    }
+  }
+
+  // low mist
+  g.fillStyle = 'rgba(90,70,160,.18)';
+  for (let x = 0; x < SW; x += 2) g.fillRect(x + (Math.floor(t * 4) % 2), 116 + Math.round(Math.sin(x * .05 + t) * 2), 1, 1);
+
+  // rain
+  if (state.layers.rain.on){
+    while (scene.drops.length < 90) scene.drops.push({x: Math.random() * (SW + 40), y: Math.random() * SH});
+    g.fillStyle = 'rgba(127,143,224,.55)';
+    for (const d of scene.drops){
+      d.y += 160 * dt; d.x -= 40 * dt;
+      if (d.y > SH){ d.y = -4; d.x = Math.random() * (SW + 40); }
+      g.fillRect(Math.round(d.x), Math.round(d.y), 1, 3);
+    }
+  } else scene.drops.length = 0;
+
+  // near battlement wall
+  const ws = scene.scroll;
+  g.fillStyle = '#120c2a'; g.fillRect(0, WALL_Y, SW, SH - WALL_Y);
+  g.fillStyle = '#2a2058'; g.fillRect(0, WALL_Y, SW, 1);
+  g.fillStyle = '#0b0818';
+  for (let row = 0; row * 6 + WALL_Y + 6 < SH; row++){
+    const y = WALL_Y + 6 + row * 6;
+    g.fillRect(0, y, SW, 1);
+    const shift = (row % 2) * 6;
+    for (let x = -((ws + shift) % 12); x < SW; x += 12) g.fillRect(Math.round(x), y - 5, 1, 5);
+  }
+  for (let x = -(ws % 16); x < SW; x += 16){
+    g.fillStyle = '#120c2a'; g.fillRect(Math.round(x), WALL_Y - 5, 9, 5);
+    g.fillStyle = '#2a2058'; g.fillRect(Math.round(x), WALL_Y - 5, 9, 1);
+  }
+
+  // torches
+  for (let x = -(ws % 96) + 70; x < SW + 10; x += 96){
+    const tx = Math.round(x);
+    dither(g, tx + 1, WALL_Y + 2, 9 + Math.round(beat * 4), 'rgba(232,105,44,.22)');
+    g.fillStyle = '#4a3020'; g.fillRect(tx, WALL_Y + 3, 3, 6);
+    const f = Math.floor(t * 9 + tx) % 3;
+    g.fillStyle = '#e8692c'; g.fillRect(tx, WALL_Y - 2 - f % 2, 3, 5);
+    g.fillStyle = '#ffb347'; g.fillRect(tx + (f === 2 ? 0 : 1), WALL_Y - 1, 1 + (f === 1), 3);
+    g.fillStyle = '#fff3c4'; g.fillRect(tx + 1, WALL_Y + 1, 1, 1);
+  }
+
+  // spectrum glowing in the wall like magic runes
+  const vals = A && playing ? A.fft.getValue() : null;
+  for (let i = 0; i < 52; i++){
+    let v = vals ? clamp((vals[Math.min(vals.length - 1, Math.floor(i * vals.length / 64) + 1)] + 95) / 70, 0, 1)
+                 : .08 + .06 * Math.sin(t * 2 + i * .4);
+    const h = Math.round(v * 9) * 2;
+    if (!h) continue;
+    const x = 4 + i * 6;
+    g.fillStyle = 'rgba(79,209,197,.75)'; g.fillRect(x, SH - 2 - h, 4, h);
+    g.fillStyle = '#b8fff6'; g.fillRect(x, SH - 2 - h, 4, 1);
+  }
+
+  // the wanderer: walks to the beat while playing, breathes when idle
+  const walking = playing;
+  const frame = walking ? scene.step % 2 : 1;
+  const heroX = 46, heroY = WALL_Y - 14 - (walking ? (frame ? 1 : 0) : (Math.sin(t * 2) > .6 ? 1 : 0));
+  sprite(g, [...HERO_TOP, ...HERO_LEGS[frame]], HERO_COLORS, heroX, heroY);
+
+  // notes rising off the wanderer
+  for (const n of scene.notes){
+    n.y -= 14 * dt; n.x += Math.sin(t * 3 + n.p) * .3 - 6 * dt; n.life -= dt;
+    g.globalAlpha = clamp(n.life, 0, 1);
+    sprite(g, NOTE, {k: n.col}, n.x, n.y);
+  }
+  g.globalAlpha = 1;
+  scene.notes = scene.notes.filter(n => n.life > 0);
+
+  if (scene.flash > .01){
+    g.fillStyle = `rgba(220,210,255,${scene.flash * .55})`;
+    g.fillRect(0, 0, SW, SH);
+  }
+  scene.beat *= Math.pow(.02, dt);
+  scene.flash *= Math.pow(.01, dt);
+  requestAnimationFrame(drawScene);
+}
+
+function sceneBeat(quarter){
+  scene.beat = 1;
+  scene.step++;
+  if (quarter && Math.random() < .45)
+    scene.notes.push({x: 58, y: WALL_Y - 18, p: Math.random() * 6, life: 2.4, col: Math.random() < .5 ? '#f5c542' : '#4fd1c5'});
+}
+
+// ---------- albums ----------
+// Each track is a fixed recipe + seed, so it plays the same song every time.
+const ALBUMS = [
+  {
+    id:'lanterns', title:'Lanterns in the Rain', cover:'rain',
+    blurb:'Late nights inside the castle walls. Rain on the glass, one lamp still lit.',
+    tracks:[
+      {name:'Window Seat, 2 A.M.',     seed:4102,  s:{prog:'rainy', bpm:70, key:9, keys:'felt', dust:.6, wobble:.45, layers:{rain:{on:true,vol:.55}}}},
+      {name:'Puddles on the Parapet',  seed:77310, s:{prog:'rainy', bpm:74, key:2, keys:'rhodes', swing:.3, layers:{rain:{on:true,vol:.4}}}},
+      {name:"The Lamplighter's Rounds",seed:20518, s:{prog:'latenight', bpm:72, key:5, keys:'rhodes', reverb:.35}},
+      {name:'Letters I Never Sent',    seed:9931,  s:{prog:'bittersweet', bpm:68, key:4, keys:'felt', dust:.7, layers:{rain:{on:true,vol:.3}}}},
+      {name:'Drizzle & Candlewax',     seed:61207, s:{prog:'rainy', bpm:76, key:0, keys:'rhodes', swing:.34, layers:{rain:{on:true,vol:.45}}}},
+      {name:'Last Carriage Home',      seed:38844, s:{prog:'latenight', bpm:78, key:7, keys:'felt', wobble:.55}},
+    ],
+  },
+  {
+    id:'observatory', title:'Sunday at the Observatory', cover:'sun',
+    blurb:'Golden-hour jazz from the hill above the keep. Warm chords, easy steps.',
+    tracks:[
+      {name:'Brass Telescope',         seed:1488,  s:{prog:'sunday', bpm:86, key:7, keys:'felt', dust:.4, wobble:.25}},
+      {name:'Jam on Toast',            seed:52290, s:{prog:'jazzhop', bpm:84, key:5, keys:'rhodes', swing:.32}},
+      {name:'Courtyard Cats',          seed:30071, s:{prog:'neosoul', bpm:88, key:3, keys:'rhodes', swing:.36, layers:{drums:{vol:.85}}}},
+      {name:'Sun Through Stained Glass',seed:8164, s:{prog:'nostalgic', bpm:80, key:10, keys:'felt', reverb:.38}},
+      {name:'Borrowed Records',        seed:44919, s:{prog:'jazzhop', bpm:82, key:2, keys:'rhodes', dust:.7, layers:{vinyl:{vol:.75}}}},
+      {name:'Gold Hour Stroll',        seed:27765, s:{prog:'sunday', bpm:85, key:0, keys:'rhodes', swing:.3}},
+    ],
+  },
+  {
+    id:'keep', title:"Sleepwalker's Keep", cover:'moon',
+    blurb:'Drifting music for the hours after midnight. Soft, slow, mostly drumless.',
+    tracks:[
+      {name:'Stairs That Go Nowhere',  seed:11923, s:{prog:'dreamy', bpm:62, key:4, keys:'felt', reverb:.6, wobble:.55, layers:{drums:{on:false}, pad:{on:true,vol:.7}}}},
+      {name:'Moth & Moonbeam',         seed:65530, s:{prog:'dreamy', bpm:60, key:9, keys:'rhodes', reverb:.65, layers:{drums:{on:false}, pad:{on:true,vol:.6}, rain:{on:true,vol:.25}}}},
+      {name:'The Quiet Wing',          seed:3377,  s:{prog:'latenight', bpm:64, key:1, keys:'felt', reverb:.5, layers:{drums:{vol:.4}, pad:{on:true,vol:.5}}}},
+      {name:'Snowfall on the Battlements',seed:90214,s:{prog:'dreamy', bpm:58, key:2, keys:'felt', reverb:.7, dust:.45, layers:{drums:{on:false}, pad:{on:true,vol:.7}}}},
+      {name:'Old Tapes in the Cellar', seed:47002, s:{prog:'nostalgic', bpm:66, key:8, keys:'rhodes', dust:.85, wobble:.85, layers:{drums:{vol:.5}}}},
+      {name:'Lights Out, Lantern Low', seed:15151, s:{prog:'bittersweet', bpm:60, key:11, keys:'felt', reverb:.6, layers:{drums:{on:false}, pad:{on:true,vol:.6}}}},
+    ],
+  },
+];
+const ALBUM_BARS = 40; // one full arrangement, then the album moves on
+
+const fmtTime = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+const trackSeconds = t => ALBUM_BARS * 240 / t.s.bpm;
+
+// ----- cover painting (96×96 pixel art) -----
+function pixelKit(g){
+  const k = {
+    rect:(x, y, w, h, c) => { g.fillStyle = c; g.fillRect(x, y, w, h); },
+    px:(x, y, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), 1, 1); },
+    circle:(cx, cy, r, c, dith) => {
+      g.fillStyle = c;
+      for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++)
+        if (x*x + y*y <= r*r && (!dith || (x + y) % 2 === 0)) g.fillRect(cx + x, cy + y, 1, 1);
+    },
+    bands:(cols, y0, y1) => {
+      const h = (y1 - y0) / cols.length;
+      cols.forEach((c, i) => k.rect(0, Math.round(y0 + i*h), 96, Math.ceil(h) + 1, c));
+      for (let i = 1; i < cols.length; i++){
+        const y = Math.round(y0 + i*h);
+        for (let x = 0; x < 96; x += 2){ k.px(x + i % 2, y - 1, cols[i]); k.px(x + (i + 1) % 2, y, cols[i - 1]); }
+      }
+    },
+    rain:(n, col, seed) => {
+      const r = mulberry32(seed);
+      for (let i = 0; i < n; i++){
+        const x = r() * 100, y = r() * 96;
+        for (let j = 0; j < 3; j++) k.px(x - j * .5, y + j, col);
+      }
+    },
+    stars:(n, maxY, seed) => {
+      const r = mulberry32(seed);
+      for (let i = 0; i < n; i++) k.px(r() * 96, r() * maxY, r() < .3 ? '#ffffff' : '#a99be0');
+    },
+    sparkle:(x, y, c) => { k.px(x, y, '#fff'); k.px(x-1, y, c); k.px(x+1, y, c); k.px(x, y-1, c); k.px(x, y+1, c); },
+  };
+  return k;
+}
+
+const HERO = () => [...HERO_TOP, ...HERO_LEGS[1]];
+
+const COVERS = {
+  rain(g){
+    const k = pixelKit(g);
+    k.bands(['#0b0a24','#141236','#1d1846','#2a1f55','#3a2766'], 0, 82);
+    k.stars(18, 30, 5);
+    // distant keep
+    [[4,52,10,30],[16,60,14,22],[32,48,8,34],[42,58,12,24]].forEach(([x,y,w,h]) => {
+      k.rect(x, y, w, h, '#1a1438');
+      for (let i = 0; i < w; i += 3) k.rect(x + i, y - 2, 2, 2, '#1a1438');
+    });
+    // the tower with the one lit window
+    k.circle(70, 44, 18, 'rgba(255,207,107,.16)', true);
+    k.rect(58, 24, 26, 72, '#120c2a'); k.rect(58, 24, 1, 72, '#2a2058');
+    for (let i = 0; i < 12; i++) k.rect(58 + Math.floor(i * 13 / 12), 24 - i, Math.max(1, 26 - Math.floor(i * 26 / 12)), 1, '#120c2a');
+    k.rect(70, 8, 1, 6, '#120c2a'); k.rect(71, 8, 3, 2, '#c2334d');
+    k.rect(65, 36, 11, 15, '#ffcf6b'); k.rect(65, 36, 11, 2, '#e8692c');
+    k.rect(70, 36, 1, 15, '#7a3a14'); k.rect(65, 43, 11, 1, '#7a3a14');
+    k.px(65, 36, '#120c2a'); k.px(75, 36, '#120c2a');
+    // hanging lantern
+    k.rect(22, 0, 1, 30, '#3a2a1a');
+    k.circle(22, 34, 12, 'rgba(255,179,71,.2)', true);
+    k.rect(19, 30, 7, 2, '#2a1a10'); k.rect(19, 32, 7, 7, '#ffb347'); k.rect(20, 33, 5, 5, '#fff3c4');
+    k.rect(19, 39, 7, 2, '#2a1a10'); k.rect(22, 32, 1, 7, '#2a1a10');
+    // wet ground + reflections
+    k.rect(0, 82, 96, 14, '#0d0b22');
+    for (let y = 84; y < 96; y += 2) for (let x = 64; x < 77; x += 2) if ((x + y) % 4 === 0) k.px(x, y, 'rgba(255,207,107,.55)');
+    for (let y = 86; y < 96; y += 3) k.px(22, y, 'rgba(255,179,71,.5)');
+    sprite(g, HERO(), HERO_COLORS, 38, 68);
+    k.rain(150, 'rgba(127,143,224,.65)', 9);
+  },
+
+  sun(g){
+    const k = pixelKit(g);
+    k.bands(['#2b1d5c','#5a2d74','#9b3f74','#d8676a','#f39a62','#ffc874'], 0, 72);
+    k.circle(46, 56, 24, 'rgba(255,224,138,.3)', true);
+    k.circle(46, 56, 15, '#ffd36b'); k.circle(46, 56, 11, '#fff0b8');
+    // clouds
+    const cloud = (x, y, w) => {
+      k.rect(x + 3, y, w - 6, 3, '#ffe0c2'); k.rect(x, y + 3, w, 4, '#ffd0b0'); k.rect(x + 1, y + 7, w - 2, 1, '#e8a08a');
+    };
+    cloud(8, 18, 22); cloud(62, 28, 26); cloud(40, 10, 14);
+    // birds
+    [[24,34],[30,30],[72,16]].forEach(([x,y]) => { k.px(x, y, '#3a1f4a'); k.px(x+1, y+1, '#3a1f4a'); k.px(x+2, y, '#3a1f4a'); });
+    // hill
+    for (let x = 0; x < 96; x++){
+      const h = Math.round(68 - 6 * Math.sin((x - 10) * .045) - 3 * Math.sin(x * .13));
+      k.rect(x, h, 1, 96 - h, '#2a1a48');
+      k.px(x, h, '#4a3680');
+    }
+    // observatory
+    k.rect(56, 56, 24, 12, '#1e1338');
+    for (let y = -11; y <= 0; y++) for (let x = -12; x <= 12; x++)
+      if (x*x + y*y <= 144) k.px(68 + x, 56 + y, x < -8 ? '#4a3680' : '#2b1e52');
+    k.rect(67, 45, 2, 11, '#ffcf6b');
+    for (let i = 0; i < 9; i++) k.px(69 + i, 47 - Math.round(i * .7), '#120a26');
+    k.rect(66, 61, 4, 7, '#ffcf6b');
+    for (let x = 4; x < 92; x += 7) k.px(x, 80 + (x % 3), '#5a8a4a');
+    sprite(g, HERO(), HERO_COLORS, 26, 52);
+  },
+
+  moon(g){
+    const k = pixelKit(g);
+    k.bands(['#040616','#081030','#0c1a44','#122456','#173068','#1c3a78'], 0, 96);
+    k.stars(60, 90, 13);
+    k.circle(64, 30, 30, 'rgba(200,220,255,.12)', true);
+    for (let y = -22; y <= 22; y++) for (let x = -22; x <= 22; x++){
+      const inA = x*x + y*y <= 484, inB = (x - 9)*(x - 9) + (y + 6)*(y + 6) <= 400;
+      if (inA && !inB) k.px(64 + x, 30 + y, x < -14 ? '#c9d2f5' : '#eef1ff');
+    }
+    [[12,12],[86,58],[40,20],[90,8],[30,44]].forEach(([x,y]) => k.sparkle(x, y, '#7fb8ff'));
+    // tower and spiral stair
+    k.rect(14, 26, 14, 70, '#0a0d26'); k.rect(14, 26, 1, 70, '#1d2a5a');
+    for (let i = 0; i < 10; i++) k.rect(14 + i * .7 | 0, 26 - i, Math.max(1, 14 - i * 1.4 | 0), 1, '#0a0d26');
+    for (let y = 34; y < 92; y += 9){ k.rect(19, y, 2, 3, '#7ff0e6'); }
+    for (let i = 0; i < 30; i++) k.px(28 + Math.round(Math.sin(i * .5) * 2), 40 + i * 1.8, '#1d2a5a');
+    // bridge
+    k.rect(28, 74, 68, 2, '#0a0d26');
+    for (let x = 30; x < 96; x++){
+      const a = Math.round(8 * Math.sin(((x - 30) / 66) * Math.PI));
+      k.rect(x, 76, 1, Math.max(0, 8 - a) , '#0a0d26');
+    }
+    sprite(g, HERO(), HERO_COLORS, 52, 60);
+    [[64,54],[68,49],[73,45]].forEach(([x,y], i) => {
+      const c = 'rgba(191,227,255,' + (.9 - i * .25) + ')';
+      k.rect(x, y, 3, 1, c); k.px(x + 1, y + 1, c); k.rect(x, y + 2, 3, 1, c);
+    });
+    for (let y = 84; y < 96; y += 2) for (let x = (y / 2) % 2; x < 96; x += 2) k.px(x, y, 'rgba(120,150,220,.18)');
+  },
+};
+
+function paintCover(canvas, album){
+  canvas.width = 96; canvas.height = 96;
+  const g = canvas.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  COVERS[album.cover](g);
+}
+
+async function downloadCover(album){
+  await document.fonts.load('40px "Press Start 2P"');
+  const art = document.createElement('canvas'); paintCover(art, album);
+  const out = document.createElement('canvas'); out.width = out.height = 1200;
+  const g = out.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.drawImage(art, 0, 0, 1200, 1200);
+  // title block, game-cartridge style
+  const words = album.title.toUpperCase().split(' ');
+  const lines = []; let line = '';
+  g.font = '52px "Press Start 2P"';
+  for (const w of words){
+    const test = line ? line + ' ' + w : w;
+    if (g.measureText(test).width > 1040 && line){ lines.push(line); line = w; } else line = test;
+  }
+  lines.push(line);
+  g.textBaseline = 'top';
+  lines.forEach((l, i) => {
+    g.fillStyle = '#07040f'; g.fillText(l, 66, 66 + i * 72);
+    g.fillStyle = '#f5c542'; g.fillText(l, 60, 60 + i * 72);
+  });
+  g.font = '22px "Press Start 2P"';
+  g.fillStyle = '#07040f'; g.fillText('LOFI STUDIO', 63, 1123);
+  g.fillStyle = '#ece6ff'; g.fillText('LOFI STUDIO', 60, 1120);
+  out.toBlob(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${album.id}-cover.png`;
+    a.click();
+  }, 'image/png');
+}
+
+// ----- album playback -----
+let currentTrack = null; // {a: album index, t: track index}
+let openAlbum = null;
+
+function playTrack(ai, ti){
+  const t = ALBUMS[ai].tracks[ti];
+  currentTrack = {a: ai, t: ti};
+  currentVibe = null;
+  state = makeState(t.s); state.seed = t.seed;
+  syncUI(); applyState(); setKeysSound(state.keys);
+  reseed();
+  step = 0;
+  if (!playing) play();
+  renderAlbums();
+}
+
+function nextTrack(){
+  if (!currentTrack) return;
+  const {a, t} = currentTrack;
+  if (t + 1 < ALBUMS[a].tracks.length) playTrack(a, t + 1);
+  else { stop(); currentTrack = null; updateNowPlaying(); renderAlbums(); }
+}
+
+function currentTitle(){
+  return currentTrack ? ALBUMS[currentTrack.a].tracks[currentTrack.t].name : trackName(state.seed);
+}
+
+// ----- albums UI -----
+function renderAlbums(){
+  const view = $('albumsView');
+  if (openAlbum === null){
+    view.innerHTML = `
+      <section class="card">
+        <h2 class="sec"><b>♫</b> Albums</h2>
+        <p class="lead">Three finished records. Pick one and press play; it runs start to finish.</p>
+        <div class="shelf">${ALBUMS.map((al, i) => `
+          <button class="album" data-album="${i}">
+            <canvas aria-hidden="true"></canvas>
+            <span class="nm">${al.title}</span>
+            <span class="ds">${al.tracks.length} tracks · ${fmtTime(al.tracks.reduce((s, t) => s + trackSeconds(t), 0))}</span>
+          </button>`).join('')}
+        </div>
+      </section>`;
+    view.querySelectorAll('.album').forEach(b => paintCover(b.querySelector('canvas'), ALBUMS[+b.dataset.album]));
+    return;
+  }
+  const al = ALBUMS[openAlbum];
+  const total = al.tracks.reduce((s, t) => s + trackSeconds(t), 0);
+  view.innerHTML = `
+    <section class="card">
+      <button class="ghost back" data-back>◀ ALL ALBUMS</button>
+      <div class="ad-head">
+        <canvas aria-label="${al.title} cover art"></canvas>
+        <div class="ad-info">
+          <h3>${al.title}</h3>
+          <p>${al.blurb}</p>
+          <p class="ds">${al.tracks.length} tracks · ${fmtTime(total)}</p>
+          <div class="ad-actions">
+            <button class="primary" data-playalbum>▶ PLAY ALBUM</button>
+            <button data-cover>⬇ COVER ART</button>
+          </div>
+        </div>
+      </div>
+      <ol class="tracklist">${al.tracks.map((t, i) => {
+        const on = currentTrack && currentTrack.a === openAlbum && currentTrack.t === i;
+        return `<li><button data-track="${i}" class="${on ? 'on' : ''}" aria-current="${on}">
+          <span class="no">${on && playing ? '♪' : String(i + 1).padStart(2, '0')}</span>
+          <span class="tn">${t.name}</span>
+          <span class="tm">${fmtTime(trackSeconds(t))}</span>
+        </button></li>`;
+      }).join('')}</ol>
+    </section>`;
+  paintCover(view.querySelector('.ad-head canvas'), al);
+}
+
+function bindAlbumsUI(){
+  document.querySelector('.tabs').addEventListener('click', e => {
+    const tab = e.target.closest('[data-tab]'); if (!tab) return;
+    const albums = tab.dataset.tab === 'albums';
+    document.querySelectorAll('.tabs [data-tab]').forEach(b => b.setAttribute('aria-selected', b === tab));
+    $('createView').hidden = albums; $('albumsView').hidden = !albums;
+    if (albums) renderAlbums();
+  });
+  $('albumsView').addEventListener('click', e => {
+    const el = e.target.closest('button'); if (!el) return;
+    if (el.dataset.album !== undefined){ openAlbum = +el.dataset.album; renderAlbums(); }
+    else if (el.dataset.back !== undefined){ openAlbum = null; renderAlbums(); }
+    else if (el.dataset.playalbum !== undefined) playTrack(openAlbum, 0);
+    else if (el.dataset.cover !== undefined) downloadCover(ALBUMS[openAlbum]);
+    else if (el.dataset.track !== undefined) playTrack(openAlbum, +el.dataset.track);
+  });
+}
+
+buildUI();
+bindSamplesUI();
+bindAlbumsUI();
+syncUI();
+applyState();
+drawScene();
+</script>
+</body>
+</html>
