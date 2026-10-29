@@ -64,6 +64,13 @@
   .scene-card{position:sticky;top:16px;padding:12px}
   canvas#viz{width:100%;height:auto;aspect-ratio:320/150;display:block;image-rendering:pixelated;background:var(--ink)}
   .scene-caption{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px;background:var(--ink);padding:10px 12px}
+  .who{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap;padding-left:3px}
+  .who-label{color:var(--muted);font-size:19px;margin-right:2px}
+  .who button{display:inline-flex;align-items:center;gap:7px;padding:6px 10px 6px 7px;font-size:8px}
+  .who button::before{content:none !important}
+  .who button[aria-checked=true]{background:var(--gold);color:var(--ink)}
+  .who canvas{height:22px;width:auto;display:block;image-rendering:pixelated}
+  @media (max-width:520px){ .who-label{width:100%} .who button{flex:1 1 0;justify-content:center} }
   #chordName{font:16px/1 var(--pixel);color:var(--gold)}
   #sectionName{color:var(--teal);text-align:right}
 
@@ -268,6 +275,12 @@
       <span id="chordName">—</span>
       <span id="sectionName">pick a vibe to begin</span>
     </div>
+    <div class="who" id="who" role="radiogroup" aria-label="Character">
+      <span class="who-label" aria-hidden="true">Character</span>
+      <button role="radio" data-who="auto" title="The guy and the girl take turns by scene"><canvas data-head="auto" width="36" height="18" aria-hidden="true"></canvas>AUTO</button>
+      <button role="radio" data-who="guy" title="The guy in every scene"><canvas data-head="guy" width="24" height="18" aria-hidden="true"></canvas>GUY</button>
+      <button role="radio" data-who="girl" title="The girl in every scene"><canvas data-head="girl" width="24" height="18" aria-hidden="true"></canvas>GIRL</button>
+    </div>
   </section>
 
   <div class="steps">
@@ -370,7 +383,7 @@
   </ol>
   <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
      Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
-  <p>Optional: open <b>Add your own sounds</b> to drop in your own audio, or <b>Fine-tune</b> for musical details.</p>
+  <p>Optional: open <b>Add your own sounds</b> to drop in your own audio, or <b>Fine-tune</b> for musical details. Under the scene, <b>Character</b> picks who appears.</p>
   <button id="helpClose" class="primary">GOT IT</button>
 </dialog>
 
@@ -1239,6 +1252,51 @@ function syncUI(){
   updateNowPlaying();
 }
 
+// ---------- character switch ----------
+// Auto keeps the per-scene pairing; Guy or Girl puts that character in every scene.
+const CHAR_PICKS = ['auto', 'guy', 'girl'];
+let charPick = 'auto';
+try { const saved = localStorage.getItem('lofi.character'); if (CHAR_PICKS.includes(saved)) charPick = saved; } catch (e) {}
+const whoFor = sid => charPick === 'auto' ? CHAR_FOR[sid] : charPick;
+
+function setCharacter(pick){
+  charPick = pick;
+  try { localStorage.setItem('lofi.character', pick); } catch (e) {}
+  syncCharacterUI();
+  // the album covers show whoever is picked
+  document.querySelectorAll('#carTrack .slide').forEach((s, i) => paintCover(s.querySelector('canvas'), ALBUMS[i]));
+}
+
+function syncCharacterUI(){
+  document.querySelectorAll('#who [data-who]').forEach(b => {
+    const on = b.dataset.who === charPick;
+    b.setAttribute('aria-checked', on);
+    b.tabIndex = on ? 0 : -1;
+  });
+}
+
+function bindCharacterUI(){
+  document.querySelectorAll('#who canvas').forEach(cv => {
+    const g = cv.getContext('2d'); g.imageSmoothingEnabled = false;
+    const head = cv.dataset.head;
+    if (head === 'auto'){
+      spriteHD(g, CHARS.girl.head, CHARS.girl.colors, 12, 0);
+      spriteHD(g, CHARS.guy.head, CHARS.guy.colors, 0, 0);
+    } else spriteHD(g, CHARS[head].head, CHARS[head].colors, 0, 0);
+  });
+  $('who').addEventListener('click', e => { const b = e.target.closest('[data-who]'); if (b) setCharacter(b.dataset.who); });
+  // arrow keys move through the options, like a native radio group
+  $('who').addEventListener('keydown', e => {
+    const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const next = CHAR_PICKS[(CHAR_PICKS.indexOf(charPick) + step + CHAR_PICKS.length) % CHAR_PICKS.length];
+    setCharacter(next);
+    document.querySelector(`#who [data-who="${next}"]`).focus();
+  });
+  syncCharacterUI();
+}
+
 // ---------- scene state + sprites ----------
 // Scenes are laid out on a 320×150 grid and painted at 2× by the toolkit below.
 const SW = 320, SH = 150, WALL_Y = 124, STRIDE = 6.5; // STRIDE: ground moved per step (one quarter note)
@@ -1261,7 +1319,7 @@ function drawScene(){
   const t = now, k = ck(g);
 
   const sid = activeSceneId();
-  k.who = CHAR_FOR[sid];
+  k.who = whoFor(sid);
   PLACES[sid].draw(g, t, dt, k);
 
   // notes rising off the wanderer
@@ -2790,7 +2848,7 @@ function renderPlace(album, t, dt){
   coverBuf ||= Object.assign(document.createElement('canvas'), {width: DW, height: DH});
   const g = coverBuf.getContext('2d'); g.imageSmoothingEnabled = false;
   const keep = {heroX: scene.heroX, heroY: scene.heroY};
-  const k = ck(g); k.who = CHAR_FOR[album.scene];
+  const k = ck(g); k.who = whoFor(album.scene);
   PLACES[album.scene].draw(g, t, dt, k);
   Object.assign(scene, keep);
   return coverBuf;
@@ -2996,6 +3054,7 @@ function bindAlbumsUI(){
 buildUI();
 bindSamplesUI();
 bindAlbumsUI();
+bindCharacterUI();
 syncUI();
 applyState();
 drawScene();

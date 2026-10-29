@@ -26,7 +26,7 @@ There are seven finished albums, browsed in a swipeable carousel where the highl
 | Campfire Under Pines | camping by a fire in the forest |
 | Low Tide Postcards | walking the beach at sunset |
 
-A guy and a girl in hoodies (headphones on) take turns across the scenes; the guy walks the castle on the Create tab.
+A guy and a girl in hoodies (headphones on) take turns across the scenes; the guy walks the castle on the Create tab. The **Character** switch under the scene picks Auto (take turns), Guy or Girl for every scene and cover, and the browser remembers your choice.
 
 Each track is a fixed recipe and seed, so it plays the same song every time. Albums play one full arrangement per track, then move to the next track.
 
