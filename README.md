@@ -14,7 +14,7 @@ The whole studio fits on one screen, on a phone or a desktop: the scene, a panel
 2. **Shape.** Set speed, bounce (swing), vintage (tape dust and wobble) and space (reverb), and fine-tune the key, chords and piano.
 3. **Mix.** Turn keys, bass, drums, melody, pad, vinyl crackle and rain on or off, and set each one's volume.
 
-**+ Sounds** takes your own audio files, and **Albums** has seven finished albums.
+**Sounds** takes your own audio files, and **Albums** has seven finished albums.
 
 **TRY ANOTHER** keeps the vibe and makes a new melody and beat. **RECORD** saves what you hear as a `.webm` file.
 

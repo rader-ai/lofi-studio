@@ -142,16 +142,46 @@
   .panel{container:panel / inline-size;width:var(--pw);display:flex;flex-direction:column;gap:12px;padding:14px 12px 12px;
     height:clamp(min(28rem, 100cqh), (var(--sceneW) - var(--padH)) / 2.1333 + var(--capH), 100cqh)}
   .tabs{display:flex;gap:9px;padding:4px 3px 0;flex:none}
-  .tabs button{flex:1 1 0;min-width:0;padding:11px 4px;font-size:9px;white-space:nowrap;overflow:hidden}
-  .tabs .n{display:inline-grid;place-items:center;width:15px;height:15px;margin-right:6px;background:var(--torch);color:var(--ink);font-size:8px;vertical-align:-3px}
+  .tabs button{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:8px;padding:9px 4px;font-size:9px;line-height:1;white-space:nowrap;overflow:hidden}
   .tabs button[aria-selected=true]{background:var(--gold);color:var(--ink)}
-  .tabs button[aria-selected=true] .n{background:var(--ink);color:var(--gold)}
-  @container panel (max-width:480px){ .tabs{gap:7px} .tabs button{font-size:7px;padding:10px 2px} .tabs .n{display:none} }
-  @container panel (max-width:380px){ .tabs{gap:6px} .tabs .sym{display:none} }
+  .tl{display:block}
+  @container panel (max-width:480px){ .tabs{gap:7px} .tabs button{font-size:7px;gap:6px;padding:9px 2px} }
+  @container panel (max-width:400px){ .tabs button{flex-direction:column;gap:5px;padding:7px 2px 6px} }
+
+  /* Tab icons are drawn on an 8×8 pixel grid. The open tab's icon comes alive (and any
+     tab's under the pointer): the note bobs, the slider knobs glide, the level bars bounce,
+     the speaker's waves pulse and the record spins. */
+  .ti{width:16px;height:16px;flex:none;display:block;fill:currentColor;shape-rendering:crispEdges;overflow:visible}
+  .ti .acc{fill:var(--gold)}
+  .ti .gl{fill:#fff6d6}
+  .ti .gv{fill:rgba(7,4,15,.4)}
+  .tabs button[aria-selected=true] .ti .acc{fill:var(--torch)}
+  .tabs button[aria-selected=true] .ti .gl{fill:#fff}
+  .ti *{transform-box:fill-box}
+  .ti-mix .b{transform-origin:50% 100%}
+  .ti-mix .b1{transform:scaleY(.625)} .ti-mix .b3{transform:scaleY(.375)}
+  .ti-alb .gl{transform-box:view-box;transform-origin:4px 4px}
+  .tabs :is([aria-selected=true],:hover) .ti-vibe .nt{animation:tiBob .9s steps(1) infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-shape .k1{animation:tiK1 1.4s steps(5,jump-none) infinite alternate}
+  .tabs :is([aria-selected=true],:hover) .ti-shape .k2{animation:tiK2 1.4s steps(5,jump-none) infinite alternate}
+  .tabs :is([aria-selected=true],:hover) .ti-mix .b1{animation:tiB1 .8s steps(1) infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-mix .b2{animation:tiB2 .8s steps(1) infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-mix .b3{animation:tiB3 .8s steps(1) infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-snd .w1{animation:tiWave 1s steps(1) infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-snd .w2{animation:tiWave 1s steps(1) -.5s infinite}
+  .tabs :is([aria-selected=true],:hover) .ti-alb .gl{animation:tiSpin 1.2s steps(4) infinite}
+  @keyframes tiBob{50%{transform:translateY(-1px)}}
+  @keyframes tiK1{to{transform:translateX(4px)}}
+  @keyframes tiK2{to{transform:translateX(-4px)}}
+  @keyframes tiB1{0%{transform:scaleY(.625)}25%{transform:scaleY(1)}50%{transform:scaleY(.375)}75%{transform:scaleY(.75)}}
+  @keyframes tiB2{0%{transform:scaleY(1)}25%{transform:scaleY(.5)}50%{transform:scaleY(.875)}75%{transform:scaleY(.25)}}
+  @keyframes tiB3{0%{transform:scaleY(.375)}25%{transform:scaleY(.75)}50%{transform:scaleY(1)}75%{transform:scaleY(.5)}}
+  @keyframes tiWave{50%{opacity:0}}
+  @keyframes tiSpin{to{transform:rotate(360deg)}}
   .pages{container:pages / size;position:relative;flex:1 1 0;min-height:0}
   .page{position:absolute;top:0;left:0;width:calc(100% / var(--z,1));height:calc(100% / var(--z,1));transform:scale(var(--z,1));transform-origin:0 0;
     display:flex;flex-direction:column;gap:10px;padding:3px 3px 2px}
-  .page[hidden]{display:none}
+  .page[hidden]{display:none !important}
   .lead{margin:0;color:var(--muted);font-size:19px;line-height:1.05;flex:none}
   .hint{color:var(--teal);font-size:18px;line-height:1.1;margin:0;min-height:1.1em}
   @container pages (max-height:340px){ .lead{display:none} }
@@ -290,7 +320,7 @@
   @container pages (max-height:300px){ .ad-info .ds{display:none} .tracklist button{padding-block:4px} .car-track{padding-block:8px 10px} }
   /* a short panel (a phone on its side, a small phone): the cover beside the tracks */
   @container pages (max-height:250px){
-    #albumsView{--cover:clamp(56px, 50cqh, 130px);display:grid;grid-template-columns:calc(var(--cover) + 28px) minmax(0,1fr);gap:10px}
+    #albumsView{--cover:clamp(56px, 40cqh, 120px);display:grid;grid-template-columns:calc(var(--cover) + 28px) minmax(0,1fr);gap:10px}
     #albumsView .carousel{margin:0}
     #albumsView .car-nav{padding:8px 5px}
     #albumsView .car-nav.prev{left:0} #albumsView .car-nav.next{right:0}
@@ -337,7 +367,7 @@
   .small{color:var(--muted);font-size:19px}
 
   /* phones and tall windows: the scene on top, the panel filling the rest */
-  @media (max-aspect-ratio:1/1), (max-aspect-ratio:13/10) and (min-height:640px){
+  @media (max-aspect-ratio:1/1){
     :root{--side:10px; --gap:10px; --capH:56px; --padH:20px}
     body{font-size:20px}
     header{padding:8px var(--side) 0;gap:12px}
@@ -510,11 +540,11 @@
 
   <section class="card panel" aria-label="Studio controls">
     <nav class="tabs" role="tablist" aria-label="Studio">
-      <button role="tab" id="tab-vibe" data-tab="vibe" aria-controls="pageVibe" aria-selected="true"><span class="n">1</span>VIBE</button>
-      <button role="tab" id="tab-shape" data-tab="shape" aria-controls="pageShape" aria-selected="false" tabindex="-1"><span class="n">2</span>SHAPE</button>
-      <button role="tab" id="tab-mix" data-tab="mix" aria-controls="pageMix" aria-selected="false" tabindex="-1"><span class="n">3</span>MIX</button>
-      <button role="tab" id="tab-sounds" data-tab="sounds" aria-controls="pageSounds" aria-selected="false" tabindex="-1"><span class="sym">+ </span>SOUNDS</button>
-      <button role="tab" id="tab-albums" data-tab="albums" aria-controls="albumsView" aria-selected="false" tabindex="-1"><span class="sym">♫ </span>ALBUMS</button>
+      <button role="tab" id="tab-vibe" data-tab="vibe" aria-controls="pageVibe" aria-selected="true"><svg class="ti ti-vibe" viewBox="0 0 8 8" aria-hidden="true"><g class="nt"><rect x="4" y="0" width="1" height="7"/><rect class="acc" x="5" y="0" width="1" height="1"/><rect class="acc" x="6" y="1" width="1" height="1"/><rect class="acc" x="7" y="2" width="1" height="2"/><rect x="2" y="5" width="2" height="1"/><rect x="1" y="6" width="3" height="1"/><rect x="2" y="7" width="2" height="1"/></g></svg><span class="tl">VIBE</span></button>
+      <button role="tab" id="tab-shape" data-tab="shape" aria-controls="pageShape" aria-selected="false" tabindex="-1"><svg class="ti ti-shape" viewBox="0 0 8 8" aria-hidden="true"><rect x="0" y="1" width="8" height="1"/><rect x="0" y="6" width="8" height="1"/><rect class="acc k1" x="1" y="0" width="2" height="3"/><rect class="acc k2" x="5" y="5" width="2" height="3"/></svg><span class="tl">SHAPE</span></button>
+      <button role="tab" id="tab-mix" data-tab="mix" aria-controls="pageMix" aria-selected="false" tabindex="-1"><svg class="ti ti-mix" viewBox="0 0 8 8" aria-hidden="true"><rect class="b b1" x="0" y="0" width="2" height="8"/><rect class="b b2 acc" x="3" y="0" width="2" height="8"/><rect class="b b3" x="6" y="0" width="2" height="8"/></svg><span class="tl">MIX</span></button>
+      <button role="tab" id="tab-sounds" data-tab="sounds" aria-controls="pageSounds" aria-selected="false" tabindex="-1"><svg class="ti ti-snd" viewBox="0 0 8 8" aria-hidden="true"><rect x="0" y="2" width="2" height="4"/><rect x="2" y="1" width="1" height="6"/><rect x="3" y="0" width="1" height="8"/><rect class="acc w1" x="5" y="3" width="1" height="2"/><g class="acc w2"><rect x="6" y="1" width="1" height="1"/><rect x="7" y="2" width="1" height="4"/><rect x="6" y="6" width="1" height="1"/></g></svg><span class="tl">SOUNDS</span></button>
+      <button role="tab" id="tab-albums" data-tab="albums" aria-controls="albumsView" aria-selected="false" tabindex="-1"><svg class="ti ti-alb" viewBox="0 0 8 8" aria-hidden="true"><path d="M2 0h4v1h1v1h1v4h-1v1h-1v1h-4v-1h-1v-1h-1v-4h1v-1h1z"/><g class="gv"><rect x="2" y="2" width="1" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/></g><rect class="acc" x="3" y="3" width="2" height="2"/><g class="gl"><rect x="5" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="1"/></g></svg><span class="tl">ALBUMS</span></button>
     </nav>
     <div class="pages">
       <div class="page" id="pageVibe" role="tabpanel" aria-labelledby="tab-vibe">
@@ -611,7 +641,7 @@
   </ol>
   <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
      Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
-  <p><b>+ Sounds</b> lets you drop in your own audio. <b>Albums</b> has seven finished albums to play. Under the scene, the faces pick who appears.</p>
+  <p><b>Sounds</b> lets you drop in your own audio. <b>Albums</b> has seven finished albums to play. Under the scene, the faces pick who appears.</p>
   <button id="helpClose" class="primary">GOT IT</button>
 </dialog>
 
