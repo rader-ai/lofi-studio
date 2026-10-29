@@ -37,7 +37,8 @@
 
   header{max-width:1180px;margin:0 auto;padding:26px 16px 6px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
   h1{margin:0;font:24px/1 var(--pixel);text-shadow:3px 3px 0 var(--ink), 6px 6px 0 #3b2a7a;letter-spacing:2px}
-  h1 span{color:var(--gold);animation:shimmer 3s steps(1) infinite}
+  h1 .gold{color:var(--gold);animation:shimmer 3s steps(1) infinite}
+  h1 .ch{display:inline-block;white-space:pre;animation:wave .45s steps(3) both;animation-delay:calc(.35s + var(--i) * 45ms)}
   header p{margin:0;color:var(--muted);flex:1}
   @keyframes shimmer{0%,92%{color:var(--gold)} 94%{color:#fff3c4} 96%{color:var(--torch2)}}
 
@@ -71,8 +72,8 @@
   .who button[aria-checked=true]{background:var(--gold);color:var(--ink)}
   .who canvas{height:22px;width:auto;display:block;image-rendering:pixelated}
   @media (max-width:520px){ .who-label{width:100%} .who button{flex:1 1 0;justify-content:center} }
-  #chordName{font:16px/1 var(--pixel);color:var(--gold)}
-  #sectionName{color:var(--teal);text-align:right}
+  #chordName{font:16px/1 var(--pixel);color:var(--gold);display:inline-block}
+  #sectionName{color:var(--teal);text-align:right;display:inline-block}
 
   button{
     font:10px/1.2 var(--pixel); color:var(--text); background:var(--stone2); border:none; border-radius:0;
@@ -80,7 +81,7 @@
     box-shadow:0 0 0 3px var(--ink), inset -4px -4px 0 rgba(0,0,0,.4), inset 4px 4px 0 rgba(255,255,255,.14);
   }
   button:hover{background:#3b2e78}
-  button:active{transform:translate(2px,2px);box-shadow:0 0 0 3px var(--ink), inset 4px 4px 0 rgba(0,0,0,.4)}
+  button:not(.slide):active{transform:translateY(2px);transition-duration:.05s;box-shadow:0 0 0 3px var(--ink), inset 4px 4px 0 rgba(0,0,0,.4)}
   button:focus-visible,summary:focus-visible,.drop:focus-visible{outline:3px solid var(--gold);outline-offset:4px}
   button.primary{background:var(--torch);color:var(--ink)}
   button.primary:hover{background:#ff8445}
@@ -113,10 +114,11 @@
   .knob{margin:0 0 16px}
   .knob-top{display:flex;justify-content:space-between;margin-bottom:6px}
   .knob-top span{font:10px/1.4 var(--pixel)}
-  .knob output{color:var(--gold)}
+  .knob output{color:var(--gold);display:inline-block}
   .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:18px;margin-top:4px}
 
-  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;background:var(--ink);border:2px solid var(--edge);margin:0;cursor:pointer}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:14px;border:2px solid var(--edge);margin:0;cursor:pointer;
+    background:linear-gradient(90deg,var(--gold2) 0 var(--fill,0%),var(--ink) var(--fill,0%))}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:24px;background:var(--gold);border:none;box-shadow:0 0 0 2px var(--ink), inset -3px -3px 0 var(--gold2)}
   input[type=range]::-moz-range-thumb{width:14px;height:24px;background:var(--gold);border:none;border-radius:0;box-shadow:0 0 0 2px var(--ink), inset -3px -3px 0 var(--gold2)}
   input[type=range]:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
@@ -156,7 +158,7 @@
   .ad-actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;padding-left:4px}
   .tracklist{list-style:none;margin:20px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
   .tracklist button{width:100%;display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;text-align:left;font:inherit;padding:10px 12px}
-  .tracklist .no{font:10px var(--pixel);color:var(--muted)}
+  .tracklist .no{font:10px var(--pixel);color:var(--muted);position:relative}
   .tracklist .tn{min-width:0;overflow-wrap:break-word}
   .tracklist .tm{color:var(--muted)}
   .tracklist button.on{background:var(--teal);color:var(--ink)}
@@ -198,20 +200,25 @@
   .drawer summary::-webkit-details-marker{display:none}
   .drawer summary span{font:11px/1.4 var(--pixel);color:var(--gold)}
   .drawer summary small{color:var(--muted);font-size:19px}
-  .drawer summary::after{content:"▼";margin-left:auto;color:var(--gold);font:10px var(--pixel)}
-  .drawer[open] summary::after{content:"▲"}
+  .drawer summary::after{content:"▼";margin-left:auto;color:var(--gold);font:10px var(--pixel);transition:transform .25s var(--ease)}
+  .drawer[open] summary::after{transform:rotate(180deg)}
   .drawer > :not(summary){margin-left:18px;margin-right:18px}
   .drawer > :last-child{margin-bottom:18px}
 
   .ctl{display:grid;grid-template-columns:120px 1fr 54px;align-items:center;gap:12px;margin:12px 0}
   .ctl label{color:var(--muted)}
   .ctl select{grid-column:2 / 4;padding:5px 8px}
-  .ctl output{color:var(--gold);text-align:right}
+  .ctl output{color:var(--gold);text-align:right;display:block}
 
-  .drop{border:3px dashed var(--edge2);background:rgba(7,4,15,.6);padding:20px;text-align:center;cursor:pointer}
+  /* the drop zone border is "marching ants": four dashed edges that crawl when you hover or drag */
+  .drop{--ant:var(--edge2);padding:23px;text-align:center;cursor:pointer;transition:background-color .2s;
+    background:linear-gradient(90deg,var(--ant) 50%,transparent 0) 0 0/12px 3px repeat-x,
+      linear-gradient(90deg,var(--ant) 50%,transparent 0) 0 100%/12px 3px repeat-x,
+      linear-gradient(0deg,var(--ant) 50%,transparent 0) 0 0/3px 12px repeat-y,
+      linear-gradient(0deg,var(--ant) 50%,transparent 0) 100% 0/3px 12px repeat-y,
+      rgba(7,4,15,.6)}
   .drop small{color:var(--muted);font-size:18px}
-  .drop:hover,.drop.over{border-color:var(--gold);background:rgba(245,197,66,.08)}
-  .drop.over{animation:blink .5s steps(1) infinite}
+  .drop:hover,.drop.over{--ant:var(--gold);background-color:rgba(245,197,66,.08);animation:ants .7s linear infinite}
   .sample{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;gap:10px;align-items:center;padding:10px;margin-top:12px;background:var(--ink);box-shadow:0 0 0 2px var(--stone2)}
   .sname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gold)}
   .sname small{display:block;color:var(--muted);font-size:17px}
@@ -233,7 +240,7 @@
   }
   button.big{font-size:13px;padding:16px 20px;min-width:140px}
   .np{flex:1;min-width:0}
-  #trackTitle{font:12px/1.4 var(--pixel);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #trackTitle{font:12px/1.4 var(--pixel);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
   #npStatus{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pb-actions{display:flex;gap:14px}
 
@@ -258,12 +265,103 @@
     .layout{padding-bottom:190px}
     button.big{min-width:0}
   }
-  @media (prefers-reduced-motion:reduce){ *{animation:none !important} }
+  /* ---------- motion ----------
+     Small, snappy and game-like. Hover effects only where a real pointer can hover,
+     and all of it becomes instant under prefers-reduced-motion. */
+  :root{--ease:cubic-bezier(.2,.8,.2,1)}
+  button{transition:transform .14s var(--ease), background-color .18s, color .18s, box-shadow .14s, filter .18s, opacity .18s, width .25s var(--ease)}
+  .card{transition:border-color .25s}
+  input[type=text],select{transition:border-color .2s, box-shadow .2s}
+  input[type=text]:focus,select:focus{box-shadow:0 0 0 6px rgba(245,197,66,.14)}
+  input[type=range]{transition:border-color .2s}
+  input[type=range]::-webkit-slider-thumb{transition:transform .12s var(--ease), background-color .12s}
+  input[type=range]::-moz-range-thumb{transition:transform .12s var(--ease), background-color .12s}
+  input[type=range]:active::-webkit-slider-thumb{transform:scaleY(1.25)}
+  input[type=range]:active::-moz-range-thumb{transform:scaleY(1.25)}
+  @media (hover:hover) and (pointer:fine){
+    button:not(.slide):hover{transform:translateY(-2px);
+      box-shadow:0 0 0 3px var(--ink), 0 5px 0 3px rgba(0,0,0,.45), inset -4px -4px 0 rgba(0,0,0,.4), inset 4px 4px 0 rgba(255,255,255,.2)}
+    button.ghost:hover{color:var(--gold);box-shadow:0 0 0 3px var(--gold), 0 5px 0 3px rgba(0,0,0,.45)}
+    .tracklist button:hover{transform:translateX(5px)}
+    .tracklist button:hover .no{color:transparent}
+    .tracklist button:hover .no::after{content:"▶";position:absolute;left:0;top:50%;transform:translateY(-50%);color:var(--gold)}
+    .tracklist button.on:hover .no::after{color:var(--ink)}
+    .card:hover{border-color:var(--edge2)}
+    .card:hover::before,.card:hover::after{animation:glint .5s steps(2)}
+    .step:hover h2 b{animation:hop .45s steps(3)}
+    .vibe:hover .ic{animation:bob .5s steps(2) infinite}
+    .slide:not(.active):hover{transform:scale(.88) translateY(-4px)}
+    .drawer summary:hover span{color:#ffe08a}
+    input[type=text]:hover,select:hover,input[type=range]:hover{border-color:var(--edge2)}
+    input[type=range]:hover::-webkit-slider-thumb{background-color:#ffe08a}
+    input[type=range]:hover::-moz-range-thumb{background-color:#ffe08a}
+    h1:hover .ch{animation:wave2 .45s steps(3) both;animation-delay:calc(var(--i) * 45ms)}
+  }
+  .pop{animation:pop .3s var(--ease)}
+  .fade{animation:fadeUp .35s var(--ease)}
+  #trackTitle.type{animation:type .5s steps(var(--n,12)) both}
+  #albumsView:not([hidden]){animation:viewIn .35s var(--ease)}
+  .drawer[open] > :not(summary){animation:drawerIn .35s var(--ease) both}
+  @supports (interpolate-size:allow-keywords){
+    :root{interpolate-size:allow-keywords}
+    .drawer::details-content{height:0;overflow:clip;transition:height .35s var(--ease),content-visibility .35s allow-discrete}
+    .drawer[open]::details-content{height:auto}
+  }
+  dialog[open]{animation:dlgIn .3s var(--ease)}
+  dialog[open]::backdrop{animation:fadeIn .3s}
+  .vibe.active{background:linear-gradient(110deg,var(--gold) 35%,#fff3c4 50%,var(--gold) 65%) 0 0/300% 100%;animation:sheen 3.2s linear infinite}
+  .vibe.active .ic{animation:bob 1s steps(2) infinite}
+  .tile button.pop{animation:tilepop .35s var(--ease)}
+  .tile .lvl{display:block;height:4px;margin-top:5px;background:rgba(7,4,15,.5)}
+  .tile .lvl i{display:block;height:100%;background:var(--gold);transform-origin:left;transform:scaleX(0)}
+  .tile button[aria-pressed=false] .lvl{opacity:.35}
+  .slide.active{animation:ring 2.6s ease-in-out infinite}
+  .sample.new{animation:fadeUp .35s var(--ease) both}
+  #albumDetail.enter .ad-info,#albumDetail.enter .tracklist li{animation:fadeUp .4s var(--ease) both}
+  #albumDetail.enter .tracklist li:nth-child(2){animation-delay:.04s} #albumDetail.enter .tracklist li:nth-child(3){animation-delay:.08s}
+  #albumDetail.enter .tracklist li:nth-child(4){animation-delay:.12s} #albumDetail.enter .tracklist li:nth-child(5){animation-delay:.16s}
+  #albumDetail.enter .tracklist li:nth-child(6){animation-delay:.2s}
+  .eq{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none}
+  .eq i{display:block;width:3px;height:100%;background:currentColor;transform-origin:bottom;transform:scaleY(.15)}
+  .eq.tiny{height:12px;color:var(--ink)}
+  .eq.tiny i{animation:eqb .5s steps(3) infinite alternate}
+  .eq.tiny i:nth-child(2){animation-delay:.17s} .eq.tiny i:nth-child(3){animation-delay:.34s}
+  .np-top{display:flex;align-items:center;gap:10px;min-width:0}
+  #npEq{color:var(--teal)}
+  .np-progress{position:absolute;left:0;right:0;top:-4px;height:4px;pointer-events:none}
+  .np-progress i{display:block;height:100%;background:linear-gradient(90deg,var(--torch),var(--gold));transform-origin:left;transform:scaleX(0)}
+  .playerbar button.big:not(:focus-visible){outline:3px solid transparent;outline-offset:2px}
+  .playerbar button.big:not(.playing):not(:focus-visible){animation:attract 2.4s ease-in-out infinite}
+  .scene-card{box-shadow:0 0 0 4px var(--ink), inset 0 0 0 3px var(--ink), inset 0 0 0 6px #241b4c, 10px 10px 0 4px rgba(0,0,0,.55),
+    0 0 calc(var(--beat,0) * 28px) calc(var(--beat,0) * 4px) rgba(245,197,66,calc(var(--beat,0) * .32))}
+  .spark{position:fixed;width:4px;height:4px;margin:-2px 0 0 -2px;pointer-events:none;z-index:60;animation:spark .6s steps(6) forwards}
+  @keyframes glint{50%{background-color:#fff8d0}}
+  @keyframes hop{50%{transform:translateY(-4px)}}
+  @keyframes bob{50%{transform:translateY(-3px)}}
+  @keyframes wave{50%{transform:translateY(-5px)}}
+  @keyframes wave2{50%{transform:translateY(-5px)}}
+  @keyframes pop{0%{transform:scale(1.3);filter:brightness(1.7)}100%{transform:none;filter:none}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}}
+  @keyframes viewIn{from{opacity:0;transform:translateY(12px)}}
+  @keyframes drawerIn{from{opacity:0;transform:translateY(-6px)}}
+  @keyframes dlgIn{from{opacity:0;transform:translateY(14px) scale(.96)}}
+  @keyframes fadeIn{from{opacity:0}}
+  @keyframes sheen{0%{background-position:100% 0}60%,100%{background-position:0 0}}
+  @keyframes tilepop{0%{transform:scale(.92)}60%{transform:scale(1.05)}100%{transform:none}}
+  @keyframes ring{50%{box-shadow:0 0 0 3px var(--ink),0 0 0 6px #ffe08a,0 0 24px 6px rgba(245,197,66,.35),0 18px 34px rgba(0,0,0,.65)}}
+  @keyframes attract{50%{outline-color:rgba(255,179,71,.6);outline-offset:6px}}
+  @keyframes type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+  @keyframes spark{to{transform:translate(var(--dx),var(--dy));opacity:0}}
+  @keyframes ants{to{background-position:12px 0,-12px 100%,0 -12px,100% 12px}}
+  @keyframes eqb{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms !important;animation-delay:0s !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>LOFI <span>STUDIO</span></h1>
+  <h1>LOFI <span class="gold">STUDIO</span></h1>
   <p>~ a castle of quiet beats ~</p>
   <button id="helpBtn" class="ghost">? HOW IT WORKS</button>
 </header>
@@ -363,9 +461,10 @@
 </main>
 
 <div class="playerbar" role="region" aria-label="Player">
+  <div class="np-progress" aria-hidden="true"><i id="npProgress"></i></div>
   <button id="play" class="primary big">▶ PLAY</button>
   <div class="np">
-    <div id="trackTitle">—</div>
+    <div class="np-top"><span class="eq" id="npEq" aria-hidden="true"><i></i><i></i><i></i><i></i></span><div id="trackTitle">—</div></div>
     <div id="npStatus">press play, or pick a vibe</div>
   </div>
   <div class="pb-actions">
@@ -539,6 +638,9 @@ function buildAudio(){
 
   const ch = {};
   for (const name of Object.keys(LAYERS)) ch[name] = new Tone.Channel();
+  // a level meter on every layer, so each instrument tile can bounce with what it plays
+  const meters = {};
+  for (const name of Object.keys(LAYERS)){ meters[name] = new Tone.Meter({smoothing: .8}); ch[name].connect(meters[name]); }
   for (const name of ['keys','bass','drums','melody','pad']) ch[name].connect(bus);
   ch.vinyl.connect(ambient); ch.rain.connect(ambient);
 
@@ -602,7 +704,7 @@ function buildAudio(){
   const rainSway = new Tone.AutoFilter({frequency:.07, baseFrequency:900, octaves:1.5, depth:.5}).connect(rainLP).start();
   const rain = new Tone.Noise({type:'pink'}).connect(rainSway);
 
-  return {out, fft, recorder, reverb, sectionLP, dustLP, dist, wobble, ch, bus, ambient,
+  return {out, fft, recorder, meters, reverb, sectionLP, dustLP, dist, wobble, ch, bus, ambient,
     keys, keysLP, bass, kick, snare, snareBody, hat, drumLP, melody, pad,
     crackle, hiss, rain};
 }
@@ -703,8 +805,10 @@ function onStep(time){
   if (s === 0){
     if (sec !== section) onSection(sec, time);
     Tone.Draw.schedule(() => {
-      document.getElementById('chordName').textContent = chord.name;
-      document.getElementById('sectionName').textContent = `bar ${bar % 40 + 1} · ${SECTION_LABEL[sec]}`;
+      setText($('chordName'), chord.name, 'pop');
+      const secEl = $('sectionName');
+      secEl.textContent = `bar ${bar % 40 + 1} · ${SECTION_LABEL[sec]}`;
+      if (secEl.dataset.sec !== sec){ secEl.dataset.sec = sec; replay(secEl, 'fade'); }
     }, time);
   }
   const groove = sec === 'A' || sec === 'B';
@@ -942,6 +1046,7 @@ function drawWave(canvas, sm){
   }
 }
 
+const seenSamples = new Set();
 function renderSamples(){
   const list = $('sampleList');
   list.innerHTML = samples.map(sm => {
@@ -961,6 +1066,8 @@ function renderSamples(){
     </div>`;
   }).join('');
   list.querySelectorAll('.sample').forEach(row => drawWave(row.querySelector('canvas'), samples.find(sm => sm.id === +row.dataset.id)));
+  list.querySelectorAll('.sample').forEach(row => { if (!seenSamples.has(row.dataset.id)){ seenSamples.add(row.dataset.id); row.classList.add('new'); } });
+  paintRanges();
   $('sampleNote').textContent = samples.some(sm => sm.mode === 'drumloop') && state.layers.drums.on
     ? 'Tip: you added a beat loop. Turn off Drums in step 3 if the two beats clash.' : '';
 }
@@ -1022,6 +1129,7 @@ async function play(){
   Tone.Transport.start('+0.1');
   playing = true;
   $('play').textContent = '■ STOP';
+  $('play').classList.add('playing');
   updateNowPlaying();
 }
 
@@ -1032,6 +1140,7 @@ function stop(){
   for (const sm of samples){ sm.player.stop(); sm.active = false; }
   playing = false;
   $('play').textContent = '▶ PLAY';
+  $('play').classList.remove('playing');
   $('sectionName').textContent = 'paused';
   updateNowPlaying();
 }
@@ -1138,14 +1247,15 @@ function trackName(seed){
 
 function updateNowPlaying(){
   $('seedLbl').textContent = state.seed;
-  $('trackTitle').textContent = currentTitle();
-  if (currentTrack){
-    const al = ALBUMS[currentTrack.a];
-    $('npStatus').textContent = `${playing ? '♪ ' : ''}${al.title} · track ${currentTrack.t + 1} of ${al.tracks.length}`;
-  } else {
-    const vibe = currentVibe || 'your mix';
-    $('npStatus').textContent = playing ? `♪ ${vibe} · ${state.bpm} BPM` : `${vibe} · press play`;
-  }
+  // a new title types itself out; the status line fades only when what's playing changes
+  const title = currentTitle(), tt = $('trackTitle');
+  if (tt.textContent !== title){ tt.textContent = title; tt.style.setProperty('--n', Math.max(4, title.length)); replay(tt, 'type'); }
+  const st = $('npStatus'), vibe = currentVibe || 'your mix', al = currentTrack && ALBUMS[currentTrack.a];
+  const key = currentTrack ? `t${currentTrack.a}.${currentTrack.t}.${playing}` : `v${vibe}.${playing}`;
+  st.textContent = currentTrack
+    ? `${playing ? '♪ ' : ''}${al.title} · track ${currentTrack.t + 1} of ${al.tracks.length}`
+    : playing ? `♪ ${vibe} · ${state.bpm} BPM` : `${vibe} · press play`;
+  if (st.dataset.key !== key){ st.dataset.key = key; replay(st, 'fade'); }
   if (!$('albumsView').hidden) renderAlbums();
 }
 
@@ -1161,6 +1271,7 @@ function buildUI(){
     <div class="tile">
       <button data-layer="${k}" aria-pressed="false">
         <span class="nm">${l.label}</span><span class="ds">${LAYER_INFO[k]}</span>
+        <span class="lvl" aria-hidden="true"><i></i></span>
       </button>
       <input type="range" min="0" max="1" step="0.01" data-layervol="${k}" aria-label="${l.label} volume">
     </div>`).join('');
@@ -1186,6 +1297,7 @@ function buildUI(){
     const L = state.layers[btn.dataset.layer];
     L.on = !L.on;
     syncUI(); applyState(); renderSamples();
+    replay(btn, 'pop');
   });
   $('layers').addEventListener('input', e => {
     const k = e.target.dataset.layervol; if (!k) return;
@@ -1202,10 +1314,12 @@ function buildUI(){
     currentVibe = name; currentTrack = null;
     $('vibeNote').textContent = '';
     loadState();
+    sparkle(btn);
   });
 
-  $('play').addEventListener('click', () => playing ? stop() : play());
+  $('play').addEventListener('click', () => { if (playing) stop(); else { sparkle($('play')); play(); } });
   $('variation').addEventListener('click', () => {
+    sparkle($('variation'), ['#4fd1c5', '#ffffff', '#f5c542']);
     currentTrack = null;
     state.seed = Math.floor(Math.random()*1e6);
     reseed();
@@ -1221,9 +1335,10 @@ function buildUI(){
     currentTrack = null;
     currentVibe = `"${text.length > 28 ? text.slice(0, 26) + '…' : text}"`;
     loadState();
-    $('vibeNote').textContent = heard.length
+    sparkle($('brew'));
+    setText($('vibeNote'), heard.length
       ? `Heard: ${heard.join(', ')}. Now playing ${PROGS[s.prog].minor ? 'minor' : 'major'} chords at ${s.bpm} BPM.`
-      : `No words I know yet, so these words picked a random song. Try rain, jazz, night, sunny or sleepy.`;
+      : `No words I know yet, so these words picked a random song. Try rain, jazz, night, sunny or sleepy.`, 'fade');
   };
   $('brew').addEventListener('click', brew);
   $('vibe').addEventListener('keydown', e => { if (e.key === 'Enter') brew(); });
@@ -1240,16 +1355,108 @@ function loadState(){
 
 function syncUI(){
   for (const id of ['bpm','swing','reverb','dust','wobble']){
-    $(id).value = state[id]; $(id + 'Out').textContent = SHAPE_FMT[id](state[id]);
+    $(id).value = state[id]; setText($(id + 'Out'), SHAPE_FMT[id](state[id]), 'pop');
   }
-  $('vintage').value = state.dust; $('vintageOut').textContent = SHAPE_FMT.vintage(state.dust);
+  $('vintage').value = state.dust; setText($('vintageOut'), SHAPE_FMT.vintage(state.dust), 'pop');
   $('key').value = state.key; $('prog').value = state.prog; $('keys').value = state.keys;
   for (const [k,L] of Object.entries(state.layers)){
     document.querySelector(`[data-layer="${k}"]`).setAttribute('aria-pressed', L.on);
     document.querySelector(`[data-layervol="${k}"]`).value = L.vol;
   }
   document.querySelectorAll('.vibe').forEach(b => b.classList.toggle('active', b.dataset.preset === currentVibe));
+  paintRanges();
   updateNowPlaying();
+}
+
+// ---------- motion helpers ----------
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// restart a CSS animation class on an element
+function replay(el, cls){
+  if (!el) return;
+  el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+}
+// change text, animating only when it actually changed
+function setText(el, text, cls){
+  if (!el || el.textContent === String(text)) return;
+  el.textContent = text;
+  if (cls) replay(el, cls);
+}
+// sliders show a filled track up to their value
+function paintRange(r){
+  const min = +r.min || 0, max = r.max === '' ? 100 : +r.max;
+  r.style.setProperty('--fill', ((+r.value - min) / (max - min) * 100) + '%');
+}
+function paintRanges(){ document.querySelectorAll('input[type=range]').forEach(paintRange); }
+document.addEventListener('input', e => { if (e.target.matches('input[type=range]')) paintRange(e.target); });
+
+// a little burst of pixels from whatever was pressed
+function sparkle(el, colors = ['#f5c542', '#ffb347', '#4fd1c5', '#ffffff']){
+  if (reduceMotion || !el) return;
+  const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  for (let i = 0; i < 10; i++){
+    const a = i / 10 * Math.PI * 2 + Math.random() * .5, d = 24 + Math.random() * 28, s = document.createElement('i');
+    s.className = 'spark';
+    s.style.cssText = `left:${cx}px;top:${cy}px;background:${colors[i % colors.length]};--dx:${Math.cos(a) * d}px;--dy:${Math.sin(a) * d}px`;
+    document.body.append(s);
+    setTimeout(() => s.remove(), 700);
+  }
+}
+
+// the title's letters each get their own span so they can wave
+function splitTitle(){
+  const h1 = document.querySelector('h1'), label = h1.textContent;
+  let i = 0;
+  const wrap = node => {
+    for (const child of [...node.childNodes]){
+      if (child.nodeType !== 3){ wrap(child); continue; }
+      const frag = document.createDocumentFragment();
+      for (const ch of child.textContent){
+        const s = document.createElement('span');
+        s.className = 'ch'; s.textContent = ch; s.style.setProperty('--i', i++);
+        frag.append(s);
+      }
+      child.replaceWith(frag);
+    }
+  };
+  wrap(h1);
+  h1.setAttribute('aria-label', label.trim());
+}
+
+// the describe box types out example vibes until you click into it
+function typePlaceholders(input){
+  if (reduceMotion) return;
+  const ideas = ['rainy night, soft piano, nostalgic', 'sunday morning coffee jazz', 'sleepy ambient, floating, 62 bpm', 'old tape memories in A minor', 'neon city at midnight'];
+  let i = 0, n = 0, dir = 1, hold = 0;
+  input.addEventListener('focus', () => { input.placeholder = ideas[i]; });
+  setInterval(() => {
+    if (document.activeElement === input || input.value) return;
+    if (hold > 0){ hold--; return; }
+    n += dir;
+    if (n >= ideas[i].length){ dir = -1; hold = 26; }
+    else if (n <= 0){ dir = 1; i = (i + 1) % ideas.length; hold = 5; }
+    input.placeholder = ideas[i].slice(0, Math.max(0, n)) + (dir > 0 ? '▌' : '');
+  }, 65);
+}
+
+// The interface moves with the music: instrument tiles meter their own level, the
+// player bar shows a live equalizer and how far through the 40-bar arrangement we
+// are, and the scene frame glows on the beat.
+let meterEls = null, eqEls = null, sceneCardEl = null;
+function uiFrame(t){
+  meterEls ||= [...document.querySelectorAll('.tile [data-layer]')].map(b => ({name: b.dataset.layer, el: b.querySelector('.lvl i'), v: 0}));
+  eqEls ||= [...document.querySelectorAll('#npEq i')];
+  sceneCardEl ||= document.querySelector('.scene-card');
+  if (A && !$('createView').hidden) for (const m of meterEls){
+    const raw = playing && state.layers[m.name].on ? A.meters[m.name].getValue() : -Infinity;
+    const db = Array.isArray(raw) ? Math.max(...raw) : raw, target = clamp((db + 66) / 50, 0, 1); // ~-66 dB (silent) to -16 dB (loud)
+    m.v = target > m.v ? target : m.v * .88; // quick to rise, slow to fall
+    m.el.style.transform = `scaleX(${m.v.toFixed(3)})`;
+  }
+  const sp = spectrum(4, t);
+  eqEls.forEach((el, i) => { el.style.transform = `scaleY(${playing ? (.2 + sp[i] * .8).toFixed(3) : .15})`; });
+  $('npProgress').style.transform = `scaleX(${(((Math.floor(step / 16) % ALBUM_BARS) + (step % 16) / 16) / ALBUM_BARS).toFixed(4)})`;
+  sceneCardEl.style.setProperty('--beat', playing ? scene.beat.toFixed(2) : 0);
 }
 
 // ---------- character switch ----------
@@ -1263,6 +1470,7 @@ function setCharacter(pick){
   charPick = pick;
   try { localStorage.setItem('lofi.character', pick); } catch (e) {}
   syncCharacterUI();
+  replay(document.querySelector(`#who [data-who="${pick}"]`), 'pop');
   // the album covers show whoever is picked
   document.querySelectorAll('#carTrack .slide').forEach((s, i) => paintCover(s.querySelector('canvas'), ALBUMS[i]));
 }
@@ -1336,6 +1544,7 @@ function drawScene(){
     g.fillRect(0, 0, DW, DH);
   }
   animateCover(t, dt);
+  uiFrame(t);
   scene.beat *= Math.pow(.02, dt);
   scene.flash *= Math.pow(.01, dt);
   requestAnimationFrame(drawScene);
@@ -2992,9 +3201,13 @@ function updateCarousel(){
   document.querySelectorAll('.car-dots button').forEach((d, i) => d.setAttribute('aria-current', i === openAlbum));
 }
 
+let lastDetailAlbum = -1;
 function renderAlbumDetail(){
   const box = $('albumDetail'); if (!box) return;
   const al = ALBUMS[openAlbum];
+  // slide the details in when you move to a different album (not on every refresh)
+  box.classList.toggle('enter', openAlbum !== lastDetailAlbum);
+  lastDetailAlbum = openAlbum;
   box.innerHTML = `
     <div class="ad-info">
       <h3>${al.title}</h3>
@@ -3008,7 +3221,7 @@ function renderAlbumDetail(){
     <ol class="tracklist">${al.tracks.map((t, i) => {
       const on = currentTrack && currentTrack.a === openAlbum && currentTrack.t === i;
       return `<li><button data-track="${i}" class="${on ? 'on' : ''}" aria-current="${on}">
-        <span class="no">${on && playing ? '♪' : String(i + 1).padStart(2, '0')}</span>
+        <span class="no">${on && playing ? '<span class="eq tiny"><i></i><i></i><i></i></span>' : String(i + 1).padStart(2, '0')}</span>
         <span class="tn">${t.name}</span>
         <span class="tm">${fmtTime(trackSeconds(t))}</span>
       </button></li>`;
@@ -3045,9 +3258,9 @@ function bindAlbumsUI(){
     if (el.dataset.album !== undefined) selectAlbum(+el.dataset.album);
     else if (el.dataset.nav !== undefined) selectAlbum(openAlbum + +el.dataset.nav);
     else if (el.dataset.dot !== undefined) selectAlbum(+el.dataset.dot);
-    else if (el.dataset.playalbum !== undefined) playTrack(openAlbum, 0);
+    else if (el.dataset.playalbum !== undefined){ sparkle(el); playTrack(openAlbum, 0); }
     else if (el.dataset.cover !== undefined) downloadCover(ALBUMS[openAlbum]);
-    else if (el.dataset.track !== undefined) playTrack(openAlbum, +el.dataset.track);
+    else if (el.dataset.track !== undefined){ sparkle(el, ['#4fd1c5', '#ffffff']); playTrack(openAlbum, +el.dataset.track); }
   });
 }
 
@@ -3055,6 +3268,8 @@ buildUI();
 bindSamplesUI();
 bindAlbumsUI();
 bindCharacterUI();
+splitTitle();
+typePlaceholders($('vibe'));
 syncUI();
 applyState();
 drawScene();
