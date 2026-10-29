@@ -18,6 +18,8 @@ The whole studio fits on one screen, on a phone or a desktop: the scene, a panel
 
 **TRY ANOTHER** keeps the vibe and makes a new melody and beat. **RECORD** saves what you hear as a `.webm` file.
 
+**LED MODE** (top corner) keeps every light steady, so nothing flashes with the beat. It's on from the start if your system is set to reduce motion, and the browser remembers your choice.
+
 ## Albums
 
 There are seven finished albums, browsed in a swipeable carousel where the highlighted cover plays its scene live. Each album is set in its own animated hi-bit pixel scene, and its cover art is cropped from that scene (you can download it as a 1200×1200 PNG):

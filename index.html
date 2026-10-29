@@ -81,6 +81,15 @@
   .credit{margin:0;color:var(--muted);font-size:19px;white-space:nowrap}
   .credit a{color:var(--gold)}
   .head-actions{display:flex;gap:14px;padding-left:4px;flex:none}
+  /* LED mode: a little LED that stays lit (steady, not blinking) while the mode is on */
+  .head-actions button{display:inline-flex;align-items:center;justify-content:center;gap:7px;height:38px;padding-block:0}
+  .led-ic{width:16px;height:16px;flex:none;display:block;fill:currentColor;shape-rendering:crispEdges;overflow:visible}
+  .led-ic .dome{fill:#3a3456} .led-ic .glint{fill:#5a5478} .led-ic .rim{fill:#8a84a8}
+  .led-btn[aria-pressed=true]{color:var(--teal);box-shadow:0 0 0 3px var(--teal)}
+  .led-btn[aria-pressed=true] .led-ic{filter:drop-shadow(0 0 3px rgba(79,209,197,.85))}
+  .led-btn[aria-pressed=true] .led-ic .dome{fill:var(--teal)} .led-btn[aria-pressed=true] .led-ic .glint{fill:#e8fffc}
+  /* in LED mode the record light stays on instead of blinking */
+  .led button.rec.on{animation:none}
   @keyframes shimmer{0%,92%{color:var(--gold)} 94%{color:#fff3c4} 96%{color:var(--torch2)}}
 
   /* side by side: the panel takes about a third of the width, the scene the rest (or less,
@@ -146,7 +155,7 @@
   .tabs button[aria-selected=true]{background:var(--gold);color:var(--ink)}
   .tl{display:block}
   @container panel (max-width:480px){ .tabs{gap:7px} .tabs button{font-size:7px;gap:6px;padding:9px 2px} }
-  @container panel (max-width:400px){ .tabs button{flex-direction:column;gap:5px;padding:7px 2px 6px} }
+  @container panel (max-width:400px){ .tabs button{flex-direction:column;gap:4px;padding:5px 2px 4px} }
 
   /* Tab icons are drawn on an 8×8 pixel grid. The open tab's icon comes alive (and any
      tab's under the pointer): the note bobs, the slider knobs glide, the level bars bounce,
@@ -376,7 +385,7 @@
     .brand{gap:0}
     .head-actions{gap:12px}
     .head-actions .lbl{display:none}
-    .head-actions button{padding:7px 10px;font-size:10px}
+    .head-actions button{height:30px;padding:0 9px;font-size:10px}
     main.layout{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
       --sceneW:min(100cqw, (100cqh - min(16rem, 60cqh) - var(--gap) - var(--capH)) * 2.1333 + var(--padH))}
     .scene-card{padding:6px}
@@ -393,7 +402,7 @@
     .tagline{display:none}
     .brand{gap:0}
     .head-actions .lbl{display:none}
-    .head-actions button{padding:7px 10px;font-size:10px}
+    .head-actions button{height:28px;padding:0 9px;font-size:10px}
     main.layout{--pw:clamp(300px, 44cqw, 560px)}
     .scene-card{padding:6px}
     .scene-caption{height:30px;margin-top:6px;padding-left:9px;gap:8px}
@@ -519,6 +528,7 @@
   </div>
   <p class="credit">made by <a href="https://happyrader.com" target="_blank" rel="noopener">Chris Rader</a> · <a href="https://github.com/rader-ai/lofi-studio" target="_blank" rel="noopener">source</a></p>
   <div class="head-actions">
+    <button id="ledBtn" class="ghost led-btn" aria-label="LED mode" aria-pressed="false"><svg class="led-ic" viewBox="0 0 8 8" aria-hidden="true"><path class="dome" d="M2 0h4v1h1v3h-6v-3h1z"/><rect class="glint" x="2" y="1" width="1" height="1"/><rect class="rim" x="0" y="4" width="8" height="1"/><rect x="2" y="5" width="1" height="3"/><rect x="5" y="5" width="1" height="3"/></svg><span class="lbl"> LED MODE</span></button>
     <button id="aboutBtn" class="ghost" aria-label="About"><span aria-hidden="true">♥</span><span class="lbl"> ABOUT</span></button>
     <button id="helpBtn" class="ghost" aria-label="How it works"><span aria-hidden="true">?</span><span class="lbl"> HOW IT WORKS</span></button>
   </div>
@@ -641,6 +651,7 @@
   </ol>
   <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
      Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
+  <p><b>LED mode</b> in the top corner keeps every light steady, so nothing flashes with the beat.</p>
   <p><b>Sounds</b> lets you drop in your own audio. <b>Albums</b> has seven finished albums to play. Under the scene, the faces pick who appears.</p>
   <button id="helpClose" class="primary">GOT IT</button>
 </dialog>
@@ -1445,7 +1456,7 @@ function buildUI(){
   $('presets').innerHTML = Object.keys(PRESETS).map(n => `
     <button class="vibe" data-preset="${n}">
       <span class="ic" aria-hidden="true">${VIBE_INFO[n].ic}</span>
-      <span class="txt"><span class="nm">${n}</span><span class="ds">${VIBE_INFO[n].ds}</span></span>
+      <span class="txt"><span class="nm">${n.replace('Bittersweet', 'Bitter\u00adsweet')}</span><span class="ds">${VIBE_INFO[n].ds}</span></span>
     </button>`).join('');
   $('layers').innerHTML = Object.entries(LAYERS).map(([k,l]) => `
     <div class="tile">
@@ -1637,13 +1648,40 @@ function uiFrame(t){
   if (A && tab === 'mix') for (const m of meterEls){
     const raw = playing && state.layers[m.name].on ? A.meters[m.name].getValue() : -Infinity;
     const db = Array.isArray(raw) ? Math.max(...raw) : raw, target = clamp((db + 66) / 50, 0, 1); // ~-66 dB (silent) to -16 dB (loud)
-    m.v = target > m.v ? target : m.v * .88; // quick to rise, slow to fall
+    m.v = ledMode ? m.v + (target - m.v) * .08 : target > m.v ? target : m.v * .88; // quick to rise, slow to fall (or a gentle glide)
     m.el.style.setProperty('--lv', m.v.toFixed(3));
   }
   const sp = spectrum(4, t);
   eqEls.forEach((el, i) => { el.style.transform = `scaleY(${playing ? (.2 + sp[i] * .8).toFixed(3) : .15})`; });
   $('npProgress').style.transform = `scaleX(${(((Math.floor(step / 16) % ALBUM_BARS) + (step % 16) / 16) / ALBUM_BARS).toFixed(4)})`;
-  sceneCardEl.style.setProperty('--beat', playing ? scene.beat.toFixed(2) : 0);
+  sceneCardEl.style.setProperty('--beat', playing ? flashy().toFixed(2) : 0);
+}
+
+// ---------- LED mode ----------
+// LED mode keeps every light steady. Lamps, torches, string lights and the campfire stop
+// pulsing with the beat, the scene no longer flashes when a new section starts, and
+// everything that follows the music (the castle's runes, the monitor, the meters) glides
+// instead of jumping. It starts on for anyone whose system asks for less motion.
+let ledMode = reduceMotion;
+try { const saved = localStorage.getItem('lofi.led'); if (saved === '1' || saved === '0') ledMode = saved === '1'; } catch (e) {}
+const flashy = () => ledMode ? 0 : scene.beat;   // the beat, as the lights feel it
+
+function setLedMode(on){
+  ledMode = on;
+  try { localStorage.setItem('lofi.led', on ? '1' : '0'); } catch (e) {}
+  syncLedUI();
+  replay($('ledBtn'), 'pop');
+}
+function syncLedUI(){
+  const b = $('ledBtn');
+  b.setAttribute('aria-pressed', ledMode);
+  b.title = ledMode ? 'LED mode is on: the lights stay steady. Tap to let them flash with the beat.'
+    : 'LED mode: keep the lights steady instead of flashing with the beat';
+  document.documentElement.classList.toggle('led', ledMode);
+}
+function bindLedUI(){
+  $('ledBtn').addEventListener('click', () => setLedMode(!ledMode));
+  syncLedUI();
 }
 
 // ---------- character switch ----------
@@ -1727,7 +1765,7 @@ function drawScene(){
   g.globalAlpha = 1;
   scene.notes = scene.notes.filter(n => n.life > 0);
 
-  if (scene.flash > .01){
+  if (scene.flash > .01 && !ledMode){
     g.fillStyle = `rgba(220,210,255,${scene.flash * .55})`;
     g.fillRect(0, 0, DW, DH);
   }
@@ -2987,11 +3025,17 @@ const PLACE_FG = {};
 const placeFg = id => PLACE_FG[id] ||= (() => { const p = painter(); PLACES[id].front(p); return p.canvas(); })();
 const drifting = (key, n, make) => pst[key] ||= Array.from({length:n}, (_, i) => make(i));
 
+const SPECTRA = {};
 function spectrum(n, t){
   const v = A && playing ? A.fft.getValue() : null;
-  return Array.from({length:n}, (_, i) => v
+  const raw = Array.from({length:n}, (_, i) => v
     ? clamp((v[Math.min(v.length - 1, 1 + Math.floor(i * v.length * .7 / n))] + 95) / 70, 0, 1)
     : .12 + .08 * Math.sin(t * 2 + i * .7));
+  // in LED mode the bars glide toward the music instead of jumping with every hit
+  const st = SPECTRA[n] ||= {t, v: raw};
+  const a = ledMode ? 1 - Math.exp(-Math.max(0, t - st.t) * 2.5) : 1;
+  st.v = st.v.map((x, i) => x + (raw[i] - x) * a); st.t = t;
+  return st.v.slice();
 }
 function sitHero(k, x, seatY){
   const c = CHARS[k.who] || CHARS.guy, y = seatY - SEAT_ROW - (scene.beat > .6 ? .5 : 0);
@@ -3380,7 +3424,7 @@ const PLACES = {
   // ---- the castle on the Create tab ----
   castle:{
     draw(g, t, dt, k){
-      const L = castleLayers(), sc = scene.scroll, beat = scene.beat;
+      const L = castleLayers(), sc = scene.scroll, beat = flashy();
       g.drawImage(L.sky, 0, 0);
       for (const s of drifting('cStars', 28, () => ({x: Math.random() * SW, y: Math.random() * 96, p: Math.random() * 6, s: .6 + Math.random() * 2}))){
         const tw = Math.sin(t * s.s + s.p);
@@ -3548,21 +3592,21 @@ const PLACES = {
         if (Math.abs(b.x - 96) < 2 || Math.abs(b.y - 56) < 2) continue;
         k.rect(b.x, b.y, 1, 1, 'rgba(200,215,255,.7)'); k.dot(b.x, b.y, '#ffffff'); k.rect(b.x + .25, b.y - 2, .5, 2, 'rgba(188,208,255,.25)');
       }
-      glowCone(k, 172, 87, 104, .9, .16 + scene.beat * .12);
-      k.glow(172, 85, 10, '#ffd080', .55 + scene.beat * .3);
+      glowCone(k, 172, 87, 104, .9, .16 + flashy() * .12);
+      k.glow(172, 85, 10, '#ffd080', .55 + flashy() * .3);
       spectrum(12, t).forEach((v, i) => {
         const h = Math.max(.5, Math.round(v * 32) / 2);
         k.rect(103 + i * 3, 97 - h, 2, h, '#4fd1c5'); k.rect(103 + i * 3, 97 - h, 2, .5, '#c8fff8');
       });
-      k.glow(120, 88, 18, '#4fd1c5', .12 + scene.beat * .1, 12);
+      k.glow(120, 88, 18, '#4fd1c5', .12 + flashy() * .1, 12);
       for (let j = 0; j < 3; j++){
         const age = (t * .7 + j / 3) % 1;
         k.rect(148.5 + Math.sin(t * 2 + j * 2) * 1.5, 96 - age * 9, .5, 1, `rgba(255,255,255,${.5 * (1 - age)})`);
       }
       const lights = ['#f5c542','#e07a8b','#4fd1c5','#9ccf9a'];
       for (let x = 6, i = 0; x < SW; x += 14, i++){
-        const y = 6 + 3 * Math.sin(x * .05), col = lights[(i + Math.floor(t * 2)) % 4];
-        k.glow(x + .75, y + 1.5, 4, col, .35 + (i % 2 === scene.step % 2 ? scene.beat * .45 : 0));
+        const y = 6 + 3 * Math.sin(x * .05), col = lights[(i + (ledMode ? 0 : Math.floor(t * 2))) % 4];
+        k.glow(x + .75, y + 1.5, 4, col, .35 + (i % 2 === scene.step % 2 ? flashy() * .45 : 0));
         k.rect(x, y + .5, 1.5, 2, col);
       }
       k.sprite(CAT, {o:'#d98a4a', d:'#a8602a'}, 250, 21);
@@ -3789,8 +3833,8 @@ const PLACES = {
         const h = Math.max(.5, Math.round(v * 30) / 2);
         k.rect(166 + i * 3, 60 - h, 2, h, 'rgba(236,236,228,.85)');
       });
-      glowCone(k, 168, 22, 104, .7, .1 + scene.beat * .1);
-      glowCone(k, 300, 22, 98, .6, .08 + scene.beat * .08);
+      glowCone(k, 168, 22, 104, .7, .1 + flashy() * .1);
+      glowCone(k, 300, 22, 98, .6, .08 + flashy() * .08);
       for (let j = 0; j < 4; j++){
         const age = (t * .8 + j / 4) % 1;
         k.glow(270 + Math.sin(t + j) * 2, 90 - age * 18, 2 + age * 3, '#ffffff', .5 * (1 - age));
@@ -3925,8 +3969,8 @@ const PLACES = {
     },
     draw(g, t, dt, k){
       k.img(placeBg('forest'), 0, 0);
-      const sp = spectrum(6, t), amp = .6 + sp[0] * .8 + scene.beat * .3;
-      k.glow(208, 122, 50 + scene.beat * 8, '#ff8a3a', .3 + scene.beat * .15, 14);
+      const sp = spectrum(6, t), amp = .6 + sp[0] * .8 + flashy() * .3;
+      k.glow(208, 122, 50 + flashy() * 8, '#ff8a3a', .3 + flashy() * .15, 14);
       k.glow(208, 112, 26, '#ffb060', .25 + sp[0] * .15);
       for (let f = 0; f < 5; f++){
         const x = 202 + f * 3, h = (8 + 5 * Math.sin(t * 9 + f * 1.7)) * amp * (f === 2 ? 1.35 : 1);
@@ -4383,6 +4427,7 @@ function bindAlbumsUI(){
 }
 
 buildUI();
+bindLedUI();
 bindSamplesUI();
 bindTabs();
 bindAlbumsUI();
