@@ -1241,27 +1241,9 @@ function syncUI(){
 
 // ---------- scene state + sprites ----------
 // Scenes are laid out on a 320×150 grid and painted at 2× by the toolkit below.
-const SW = 320, SH = 150, WALL_Y = 124;
-const scene = {heroX:46, heroY:WALL_Y - 14, beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, notes:[]};
+const SW = 320, SH = 150, WALL_Y = 124, STRIDE = 6.5; // STRIDE: ground moved per step (one quarter note)
+const scene = {heroX:46, heroY:WALL_Y - 18, beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, speed:0, notes:[]};
 
-const HERO_TOP = [
-  '...kkkk...',
-  '..khhhhk..',
-  '.khhhhhhk.',
-  '.kphhssek.',
-  '.kphhsssk.',
-  '..khhhhk..',
-  '.kcccccck.',
-  'kcccccccck',
-  'kcchhhhcck',
-  '.kchhhhck.',
-  '..khhhhk..',
-];
-const HERO_LEGS = [
-  ['..kh..hk..', '.kb....bk.', '.kk....kk.'],
-  ['...khhk...', '...kbbk...', '...kkkk...'],
-];
-const HERO_COLORS = {k:'#07040f', h:'#3d2f7a', s:'#f1c9a5', e:'#07040f', p:'#4fd1c5', c:'#c2334d', b:'#6b4426'};
 const BAT = [
   ['k.....k', 'kk.k.kk', '.kkkkk.', '..k.k..'],
   ['.......', '..kkk..', 'kkkkkkk', 'k.k.k.k'],
@@ -1273,10 +1255,14 @@ function drawScene(){
   g.imageSmoothingEnabled = false;
   const now = performance.now() / 1000, dt = Math.min(.1, now - scene.last);
   scene.last = now;
-  scene.scroll += dt * (playing ? 10 * state.bpm / 80 : 2);
+  // the ground moves exactly as fast as the walker's feet, and only while they walk
+  scene.speed = playing ? STRIDE * state.bpm / 60 : 0;
+  scene.scroll += dt * scene.speed;
   const t = now, k = ck(g);
 
-  PLACES[activeSceneId()].draw(g, t, dt, k);
+  const sid = activeSceneId();
+  k.who = CHAR_FOR[sid];
+  PLACES[sid].draw(g, t, dt, k);
 
   // notes rising off the wanderer
   for (const n of scene.notes){
@@ -1432,22 +1418,42 @@ function painter(w = DW, h = DH, opts = {}){
         put(X, Y, pick(rp, v, X, Y));
       }
     },
+    // a cumulus: rounded billows of uneven size over a flat base give the lumpy outline,
+    // but the inside is shaded as ONE mass: soft bands that follow the outer edge (bright
+    // crown, shadowed underside), with only a faint lift where each billow starts.
     cloud(cx, cy, ww, hh, cols, seed){
-      const rp = ramp(cols), r = mulberry32(seed), puffs = [], n = Math.max(4, Math.round(ww / 9));
-      for (let i = 0; i < n; i++){
-        const f = (i + .5) / n, bump = Math.sin(Math.PI * f);
-        puffs.push({x: R(cx - ww / 2 + f * ww + (r() - .5) * 6), y: R(cy - hh * .15 * bump - r() * hh * .2), r: R(hh * (.28 + .42 * bump) + r() * 3)});
+      const rp = ramp(cols), n = rp.length, r = mulberry32(seed);
+      const CX = R(cx), CY = R(cy), HW = R(ww / 2), HH = R(hh), base = CY + Math.round(HH * .3), slab = HH * .28;
+      const lobes = [], count = Math.max(3, Math.round(ww / 16));
+      for (let i = 0; i < count; i++){
+        const u = ((i + .5) / count + (r() - .5) * .45 / count) * 2 - 1, env = Math.pow(1 - u * u, .6);
+        const rad = HH * (.32 + .5 * env) * (.8 + r() * .45), lift = HH * (.25 + .9 * env) * (.75 + r() * .4);
+        lobes.push({x: CX + u * HW * .9, y: base - lift + rad, r: rad});
       }
-      for (let i = 0; i < n / 2; i++) puffs.push({x: R(cx + (r() - .5) * ww * .55), y: R(cy - hh * .35), r: R(hh * (.3 + r() * .25))});
-      const bottom = R(cy + hh * .3), CY = R(cy), HH = R(hh);
-      for (let Y = R(cy - hh * 1.4); Y < bottom; Y++) for (let X = R(cx - ww / 2 - hh); X < R(cx + ww / 2 + hh); X++){
-        let best = 0, bp = null;
-        for (const q of puffs){ const dx = X - q.x, dy = Y - q.y, cov = 1 - Math.sqrt(dx*dx + dy*dy) / q.r; if (cov > best){ best = cov; bp = q; } }
-        if (!bp) continue;
-        const lx = (X - bp.x) / bp.r, ly = (Y - bp.y) / bp.r;
-        let l = -.35 * lx - .8 * ly - (Y - CY) / HH * .55;
-        if (best < .1 && ly < 0) l += .5;
-        put(X, Y, pick(rp, (l + 1) / 2, X, Y));
+      for (let i = 0; i < Math.max(1, Math.floor(count / 3)); i++){
+        const u = (r() * 2 - 1) * .65, rad = HH * (.3 + r() * .18);
+        lobes.push({x: CX + u * HW, y: base - HH * .32 + rad, r: rad});
+      }
+      const left = Math.floor(Math.min(...lobes.map(L => L.x - L.r))), right = Math.ceil(Math.max(...lobes.map(L => L.x + L.r)));
+      for (let X = left; X <= right; X++){
+        // the outer top edge of the whole cloud at this column
+        let top = X > left + 2 && X < right - 2 ? base - slab : 1e9;
+        for (const L of lobes){ const dx = X - L.x; if (Math.abs(dx) < L.r) top = Math.min(top, L.y - Math.sqrt(L.r * L.r - dx * dx)); }
+        if (top >= 1e9) continue;
+        const floor = base + Math.round(Math.sin(X * .05 + seed) * 1.2);
+        for (let Y = Math.floor(top); Y <= floor; Y++){
+          let ownerArc = -1e9, owner = null;
+          for (const L of lobes){
+            const dx = X - L.x; if (Math.abs(dx) >= L.r) continue;
+            const half = Math.sqrt(L.r * L.r - dx * dx), arc = L.y - half;
+            if (Y >= arc && Y <= L.y + half && arc > ownerArc){ ownerArc = arc; owner = L; }
+          }
+          let sh = 1.05 - (Y - top) / Math.max(1, floor - top) * .8 - (X - CX) / HW * .08;
+          if (owner) sh += .14 * Math.max(0, 1 - (Y - ownerArc) / (owner.r * .7));
+          if (Y - top < 2) sh += .2;
+          if (Y > floor - 3) sh -= .15;
+          put(X, Y, rp[Math.max(0, Math.min(n - 1, Math.floor(sh * n + bay(X, Y) * .5)))]);
+        }
       }
     },
     // a leafy canopy built from many small shaded clumps
@@ -1646,7 +1652,7 @@ function spriteHD(g, rows, colors, X, Y){
       const ch = up[y][x], col = colors[ch];
       if (!col) continue;
       let c = col;
-      if (ch !== 'k' && ch !== 'e'){
+      if (!colors._flat && ch !== 'k' && ch !== 'e'){
         if (edge(up[y - 1]?.[x])) c = css(mixA(rgb(col), [255, 240, 214], .3));
         else if (edge(up[y + 1]?.[x]) || edge(up[y][x + 1])) c = css(mixA(rgb(col), [26, 16, 64], .35));
       }
@@ -1684,21 +1690,53 @@ const CLOUD_SPRITES = new Map();
 function cloudSprite(w, h, cols, seed){
   const key = `${w}|${h}|${seed}|${cols[0]}`;
   if (!CLOUD_SPRITES.has(key)){
-    const p = painter(Math.round((w + h * 2) * HD), Math.round(h * 1.8 * HD));
-    p.cloud(w / 2 + h, h * 1.4, w, h, cols, seed);
+    const p = painter(Math.round((w + h * 2) * HD), Math.round(h * 2 * HD));
+    p.cloud(w / 2 + h, h * 1.55, w, h, cols, seed);
     CLOUD_SPRITES.set(key, p.canvas());
   }
   return CLOUD_SPRITES.get(key);
 }
 
-const HERO_SIT = [
-  ...HERO_TOP.slice(0, 9),
-  '..khhhhhhhk',
-  '..kkkkkkbbk',
-  '.......kbk.',
-  '.......kbk.',
-  '.......kkk.',
+// The two lo-fi characters: a guy and a girl in hoodies, both in headphones.
+// Head + body are shared between poses; legs switch between walking and sitting.
+const HEAD_GUY = [
+  '....kkkk....',
+  '...kHpHhk...',
+  '..kHphhhhk..',
+  '..kphhhhhhk.',
+  '.kPPPhhsssk.',
+  '.kPPPhssesk.',
+  '.kpPpSsssssk',
+  '..khhSsssSk.',
+  '..kOkkSSSk..',
 ];
+const HEAD_GIRL = [
+  '....kkkk....',
+  '...kHpHhk...',
+  '..kHphhhhk..',
+  '.khphhhhhhk.',
+  'khPPPhhsssk.',
+  'khPPPhssesk.',
+  'khpPpSsrsssk',
+  'khhkhSsssSk.',
+  'khhOkkSSSk..',
+];
+const BODY_GUY = ['.kOOoLLLLk..', '.kOoooooodk.', '.kOoOoooodk.', '.kOoOooOook.', '..kOOOOOOk..'];
+const BODY_GIRL = ['khhOoLLLLk..', 'khhoooooodk.', '.khoOoooodk.', '.kkoOooOook.', '..kOOOOOOk..'];
+const LEGS_WALK = [
+  ['..kjjJjjjk..', '.kjjk.kjjk..', '.kjk...kjjk.', 'kwwk...kwwwk'],
+  ['..kjjJjjjk..', '...kjjJjk...', '...kjjjjk...', '...kwwwwwk..'],
+];
+const LEGS_SIT = ['..kjjjjjjjjk.', '..kJJJJJJjjk.', '..kkkkkkkjjk.', '........kjjk.', '........kjjk.', '.......kwwwwk'];
+const SEAT_ROW = 16; // the row of the sitting sprite that rests on the seat
+const CHARS = {
+  guy:  {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1c16', H:'#5a3e2c', s:'#f0c6a0', S:'#d49a78', e:'#1a1020',
+         p:'#2a2a36', P:'#e04a4a', o:'#e8963a', O:'#b8692a', L:'#ffc878', d:'#f4ead8', j:'#3a4a78', J:'#28345a', w:'#f2f0ea'}},
+  girl: {head: HEAD_GIRL, body: BODY_GIRL, colors: {_flat:1, k:'#1a1020', h:'#3a2418', H:'#6a4430', s:'#f4cfae', S:'#d8a682', e:'#1a1020', r:'#f08a9a',
+         p:'#f4f0f8', P:'#f07aa8', o:'#b49ae8', O:'#8a6ac8', L:'#dccfff', d:'#ffffff', j:'#2e2840', J:'#1e1a2c', w:'#f6f4f0'}},
+};
+// who appears where: the guy walks the castle, the albums take turns
+const CHAR_FOR = {castle:'guy', office:'girl', park:'guy', lake:'girl', cafe:'guy', garden:'girl', forest:'guy', beach:'girl'};
 const CAT = ['..o...o.....', '.ooo.ooo....', '.oooooodddo.', 'oooodooooooo', '.oooooodoooo'];
 const PERSON = [
   ['.hh.', '.ss.', 'cccc', 'cccc', 'cccc', '.ll.', '.ll.'],
@@ -1726,14 +1764,15 @@ function spectrum(n, t){
     : .12 + .08 * Math.sin(t * 2 + i * .7));
 }
 function sitHero(k, x, seatY){
-  const y = seatY - 10 - (scene.beat > .6 ? .5 : 0);
-  k.sprite(HERO_SIT, HERO_COLORS, x, y);
+  const c = CHARS[k.who] || CHARS.guy, y = seatY - SEAT_ROW - (scene.beat > .6 ? .5 : 0);
+  k.sprite([...c.head, ...c.body, ...LEGS_SIT], c.colors, x, y);
   scene.heroX = x; scene.heroY = y;
 }
 function walkHero(k, x, groundY){
-  const frame = playing ? scene.step % 2 : 1;
-  const y = groundY - 14 - (playing && frame ? .5 : 0);
-  k.sprite([...HERO_TOP, ...HERO_LEGS[frame]], HERO_COLORS, x, y);
+  const c = CHARS[k.who] || CHARS.guy, frame = playing ? scene.step % 2 : 1;
+  const rows = [...c.head, ...c.body, ...LEGS_WALK[frame]];
+  const y = groundY - rows.length - (playing && frame ? .5 : 0);
+  k.sprite(rows, c.colors, x, y);
   scene.heroX = x; scene.heroY = y;
 }
 function rainIn(k, dt, x, y, w, h, n, col, key){
@@ -2083,9 +2122,10 @@ const PLACES = {
         if (b.x < -10){ b.x = SW + 20 + Math.random() * 160; b.y = 14 + Math.random() * 40; }
         k.sprite(BAT[Math.floor(t * 7 + b.p) % 2], {k:'#0a0614'}, b.x, b.y + Math.sin(t * 3 + b.p) * 4);
       }
-      wrapDraw(g, L.far, sc * .12);
-      wrapDraw(g, L.mid, sc * .25);
-      const ko = wrapDraw(g, L.keep, sc * .45), KW = L.keep.width;
+      // depth: mountains barely move, the castle drifts slowly, the walkway keeps pace with the feet
+      wrapDraw(g, L.far, sc * .04);
+      wrapDraw(g, L.mid, sc * .08);
+      const ko = wrapDraw(g, L.keep, sc * .18), KW = L.keep.width;
       for (let base = ko; base < DW; base += KW){
         for (const w of KEEP_WINDOWS){
           const X = base + Math.round(w.x * HD);
@@ -2109,10 +2149,9 @@ const PLACES = {
           }
         }
       }
-      wrapDraw(g, L.mist, sc * .6 + t * 3, 98);
+      wrapDraw(g, L.mist, sc * .3 + t * 2, 98);
       outdoorRain(k, dt, 'castle');
       const wo = wrapDraw(g, L.wall, sc);
-      for (let X = wo + 70 * HD; X < DW + 20; X += 96 * HD) if (X > -20) torchFlame(k, X / HD, t, beat);
       // the spectrum glows out of the wall like runes
       spectrum(52, t).forEach((v, i) => {
         const h = Math.round(v * 18 * HD) / HD;
@@ -2124,6 +2163,8 @@ const PLACES = {
         if (h > 6) k.glow(x + 1, SH - 2 - h, 3.5, '#4fd1c5', .45);
       });
       walkHero(k, 46, WALL_Y);
+      // torches are mounted on the wall face, nearer the camera than the walkway
+      for (let X = wo + 70 * HD; X < DW + 20; X += 96 * HD) if (X > -20) torchFlame(k, X / HD, t, beat);
     },
   },
 
@@ -2621,14 +2662,14 @@ const PLACES = {
         gg.fillStyle = '#fff4ff'; gg.fillRect(X, y, 1, 1);
         gg.fillStyle = 'rgba(246,230,255,.5)'; gg.fillRect(X, y + 1 + (X & 1), 1, 1);
       }
-      const sc = scene.scroll * .8;
+      const sc = scene.scroll;
       for (let i = 0; i < 60; i++){
         const wx = 140 - (i * 7 + (sc % 7));
         if (wx < -4) break;
         k.rect(wx, 136 + (i % 2) * 2, 1.5, .5, '#a07a50');
       }
       for (const sh of drifting('shells', 7, i => ({x: i * 50 + Math.random() * 40, y: 124 + Math.random() * 22, c: i % 2 ? '#f8e8e0' : '#e8704a'}))){
-        if (playing) sh.x -= 8 * dt * state.bpm / 80;
+        sh.x -= scene.speed * dt;
         if (sh.x < -4) sh.x = SW + Math.random() * 40;
         k.rect(sh.x, sh.y, 1.5, 1, sh.c); k.dot(sh.x, sh.y, '#ffffff');
       }
@@ -2749,7 +2790,8 @@ function renderPlace(album, t, dt){
   coverBuf ||= Object.assign(document.createElement('canvas'), {width: DW, height: DH});
   const g = coverBuf.getContext('2d'); g.imageSmoothingEnabled = false;
   const keep = {heroX: scene.heroX, heroY: scene.heroY};
-  PLACES[album.scene].draw(g, t, dt, ck(g));
+  const k = ck(g); k.who = CHAR_FOR[album.scene];
+  PLACES[album.scene].draw(g, t, dt, k);
   Object.assign(scene, keep);
   return coverBuf;
 }

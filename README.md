@@ -26,6 +26,8 @@ There are seven finished albums, browsed in a swipeable carousel where the highl
 | Campfire Under Pines | camping by a fire in the forest |
 | Low Tide Postcards | walking the beach at sunset |
 
+A guy and a girl in hoodies (headphones on) take turns across the scenes; the guy walks the castle on the Create tab.
+
 Each track is a fixed recipe and seed, so it plays the same song every time. Albums play one full arrangement per track, then move to the next track.
 
 ## Your own sounds
