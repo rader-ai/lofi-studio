@@ -1605,6 +1605,7 @@ function drawScene(){
   scene.speed = playing ? STRIDE * state.bpm / 60 : 0;
   scene.scroll += dt * scene.speed;
   const t = now, k = ck(g);
+  windy += ((state.layers.rain.on ? 1.7 : 1) - windy) * Math.min(1, dt * .5);
 
   const sid = activeSceneId();
   k.who = whoFor(sid);
@@ -1638,10 +1639,11 @@ function sceneBeat(quarter){
 }
 
 // ---------- scenes (castle + album places) ----------
-// Scenes are painted at 2× (640×300) with a small "hi-bit" toolkit:
-// hue-shifted colour ramps, ordered dithering, shaded cloud puffs, leafy canopies,
-// grass blades, wood grain. Backgrounds are painted once and cached; moving parts
-// are drawn on top every frame.
+// Scenes are painted at 2× (640×300) with a small "hi-bit" toolkit: hue-shifted colour
+// ramps, ordered dithering, shaded cloud puffs, lawns of grass tufts, pines, wood grain.
+// Backgrounds (and a front layer for things that stand in front of swaying grass) are
+// painted once and cached; trees, grass, flowers, birds and weather are drawn on top
+// every frame so they can move.
 const HD = 2, DW = SW * HD, DH = SH * HD;
 const BAYER = [0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v => v / 16 - .47);
 const bay = (x, y) => BAYER[((y & 3) << 2) | (x & 3)];
@@ -1680,13 +1682,10 @@ const css = c => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
 
 // Colour ramps, dark → light, shadows lean blue/purple and highlights lean warm.
 const R_LEAF   = ['#173028','#22482e','#2f6434','#46843a','#68a442','#97c650','#c8e470'];
-const R_GRASS  = ['#1b3a2a','#275232','#376e38','#4e8c3c','#6caa44','#98c856'];
-const R_BLOSS  = ['#5a2a4a','#84405e','#b05e7a','#d8869c','#f2b2c0','#ffdce4'];
 const R_WOOD   = ['#22140f','#3a2218','#56341f','#734a2a','#93643a','#b8844e'];
 const R_WOODL  = ['#3a2218','#5a3824','#7a5030','#9a6a3e','#bc8a52','#dcac6c'];
 const R_STONE  = ['#2a2640','#433e5a','#5e5878','#807a98','#a6a0ba','#cac6d8'];
 const R_IRON   = ['#0e0c16','#1c1a2a','#2e2c40','#4a4860'];
-const R_DIRT   = ['#24160f','#3a2418','#563624','#704a30','#8c6040'];
 const R_SAND   = ['#a07a58','#bc9468','#d2aa78','#e4c08a','#f2d6a4','#fbe8c4'];
 const C_DAY    = ['#6e7cb8','#94a4d4','#bccbe8','#e0e8f6','#ffffff'];
 const C_SUNSET = ['#4a2e64','#7a4474','#b86478','#e8907e','#ffc29a','#ffe6c4'];
@@ -1717,6 +1716,60 @@ function painter(w = DW, h = DH, opts = {}){
   const p = {
     put, get, w, h, noise, hsh,
     canvas(){ const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(img, 0, 0); return c; },
+    // A lawn of grass tufts: little fans of pointed blades, planted from the back to the
+    // front so nearer tufts overlap farther ones. They grow from tiny V's at the back to
+    // big two-tone fans at the front. Their colour follows the light across the lawn (a
+    // sunlit back, darker grass toward the viewer, gentle swells), and opts.light(x, y)
+    // can add or take away light for tree shade or a lamp's pool. edge(x) gives the lawn's
+    // top (logical) for each column. cols: [deep, dark, mid, light, bright, tip].
+    lawn(edge, cols, seed, opts = {}){
+      const rp = ramp(cols), r = mulberry32(seed + 1), tops = new Int32Array(w), cl = X => Math.max(0, Math.min(w - 1, X | 0));
+      let minTop = h;
+      for (let X = 0; X < w; X++){ tops[X] = Math.round(edge(X / HD) * HD); minTop = Math.min(minTop, tops[X]); }
+      const span = Math.max(1, h - minTop);
+      const light = (X, Y) => (opts.base ?? .62) - Math.max(0, Y - tops[cl(X)]) / span * (opts.fade ?? .35)
+        + (noise(X * .4, Y * 1.6, 90, seed) - .5) * (opts.swell ?? .35) + (opts.light ? opts.light(X / HD, Y / HD) : 0);
+      const lev = (X, Y) => Math.max(0, Math.min(3, Math.floor(light(X, Y) * 4)));
+      for (let X = 0; X < w; X++) for (let Y = Math.max(0, tops[X]); Y < h; Y++) put(X, Y, rp[lev(X, Y)]);
+      const list = [];
+      for (let y = minTop; y < h + 12;){
+        const near = Math.max(0, (y - minTop) / span), size = (opts.small ?? 4) + near * (opts.tall ?? 10), ch = size * .55, cw = size * 1.5;
+        for (let x = -cw * r(); x < w; x += cw * (.8 + r() * .4)){
+          const X = Math.round(x + (r() - .5) * cw * .5), Y = Math.round(y + r() * ch);
+          if (X >= 0 && X < w && Y > tops[X] + 1) list.push([X, Y, size * (.75 + r() * .5)]);
+        }
+        y += ch;
+      }
+      list.sort((a, b) => a[1] - b[1]);
+      const clip = (x, y, c) => { if (y >= tops[cl(x)]) put(x, y, c); };
+      for (const [X, Y, size] of list) grassFan(clip, rp, X, Y, size, lev(X, Y), (r() - .5) * .5 + (opts.lean || 0), r);
+    },
+    // turned earth: a dark bed scattered with little lit clods and the odd pebble
+    soil(x, y, ww, hh, seed){
+      const [X0, Y0, X1, Y1] = box(x, y, ww, hh), r = mulberry32(seed), rp = ramp(['#24140c','#33200f','#4a2e1a','#6a4428','#8a5e38']);
+      for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++) put(X, Y, rp[(noise(X, Y * 2, 6, seed) > .55) + (Y > Y1 - 2 ? 0 : 1)]);
+      for (let i = 0, n = Math.round((X1 - X0) * (Y1 - Y0) / 9); i < n; i++){
+        const X = X0 + Math.floor(r() * (X1 - X0)), Y = Y0 + Math.floor(r() * (Y1 - Y0)), w = 1 + Math.floor(r() * 3);
+        if (r() < .08){ put(X, Y, rgb('#8a8296')); put(X + 1, Y, rgb('#6a6476')); continue; }
+        for (let j = 0; j < w; j++){ put(X + j, Y, rp[j === 0 ? 4 : 3]); put(X + j, Y + 1, rp[0]); }
+      }
+    },
+    // a patch of leaves painted in place (ivy on a wall, a creeper): leaf clumps that don't sway
+    leaves(cx, cy, rx, ry, pal, seed, sun = -1){
+      for (const c of shadeClumps(crownClumps(cx, cy, rx, ry, seed, pal), cx, cy, rx, ry, sun)){
+        const cv = leafClump(c.r, c.pal, c.variant, c.shade, null, sun);
+        p.blit(cv, c.cx, c.cy, cv.M);
+      }
+    },
+    // copy a sprite canvas into the buffer (x, y logical, top-left of the sprite's content)
+    blit(cv, x, y, margin = 3){
+      const sd = cv._px ||= cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      const X0 = Math.round(x * HD - margin), Y0 = Math.round(y * HD - margin);
+      for (let j = 0; j < cv.height; j++) for (let i = 0; i < cv.width; i++){
+        const o = (j * cv.width + i) * 4;
+        if (sd[o + 3]) put(X0 + i, Y0 + j, [sd[o], sd[o + 1], sd[o + 2], sd[o + 3] / 255]);
+      }
+    },
     rect(x, y, ww, hh, c){ const col = rgb(c), [X0, Y0, X1, Y1] = box(x, y, ww, hh); for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++) put(X, Y, col); },
     dot(x, y, c){ put(R(x), R(y), rgb(c)); },
     circle(cx, cy, r, c, dith){
@@ -1803,63 +1856,6 @@ function painter(w = DW, h = DH, opts = {}){
         }
       }
     },
-    // A leafy crown that reads as ONE tree: a single mass with an irregular, scalloped
-    // edge, lit as one volume from the upper left. Leaf clusters show as highlights on
-    // their light-facing sides rather than as separate balls, and optional gaps let the
-    // branches and sky peek through.
-    canopy(cx, cy, rx, ry, cols, seed, opts = {}){
-      const rp = ramp(cols), n = rp.length, CX = R(cx), CY = R(cy), RX = R(rx), RY = R(ry);
-      // texture scales follow the crown's size; long hedges take theirs from the height
-      const base = Math.min(RX, RY * 2.5), big = Math.max(5, base * .6), mid = Math.max(2.5, base * .15), fine = Math.max(1.5, base * .07);
-      const flat = opts.flat ?? 9, holes = opts.holes || 0, lightX = opts.lightX ?? .55;
-      for (let Y = Math.floor(CY - RY * 1.4); Y <= CY + RY * 1.4; Y++){
-        for (let X = Math.floor(CX - RX * 1.4); X <= CX + RX * 1.4; X++){
-          const u = (X - CX) / RX, v = (Y - CY) / RY, cluster = noise(X, Y, mid, seed + 1);
-          let d = 1 - u * u - v * v + (noise(X, Y, big, seed) - .5) * .45 + (cluster - .5) * .35 + (noise(X, Y, fine, seed + 2) - .5) * .2;
-          if (v > flat) d -= (v - flat) * 5;
-          if (d <= 0) continue;
-          if (holes && v > -.3 && v < .65 && d > .12 && noise(X, Y, mid * .9, seed + 7) > 1 - holes) continue;
-          const toLight = -(u * lightX + v * .8);
-          // each leaf cluster gets a crisp lit top and a shaded underside; the crown's overall
-          // light still dominates, so it reads as one tree with leafy texture
-          const lit = cluster - noise(X - mid * .45, Y - mid * .6, mid, seed + 1);
-          let sh = .45 + toLight * .55 + (lit > .05 ? .2 : lit < -.05 ? -.16 : 0) + (hsh(X, Y, seed) - .5) * .1;
-          if (d < .07) sh += toLight > 0 ? .2 : -.15;
-          put(X, Y, rp[Math.max(0, Math.min(n - 1, Math.floor(sh * n + bay(X, Y) * .3)))]);
-        }
-      }
-    },
-    // a trunk with a root flare, a gentle lean and bark streaks, forking into branches
-    // that disappear up into the crown
-    trunk(x, baseY, hgt, cols, seed, opts = {}){
-      const rp = ramp(cols), CX = R(x), B = R(baseY), H = R(hgt), lean = (opts.lean || 0) * HD;
-      const w0 = (opts.w || 2.6) * HD, w1 = Math.max(1.2, w0 * .5);
-      for (let i = 0; i < H; i++){
-        const t = i / H, Y = B - i, half = w0 + (w1 - w0) * t + (i < 10 ? (10 - i) * .4 : 0), cx = CX + lean * t * t;
-        for (let X = Math.round(cx - half); X <= Math.round(cx + half); X++){
-          const rel = (X - cx) / (half + .5);
-          put(X, Y, pick(rp, .55 - rel * .45 + (noise(X * 3, Y * .35, 6, seed) - .5) * .35, X, Y));
-        }
-      }
-      const r = mulberry32(seed + 5), tx = CX + lean, ty = B - H;
-      for (let b = 0; b < (opts.branches ?? 3); b++){
-        const side = b % 2 ? 1 : -1, ang = -Math.PI / 2 + side * (.45 + r() * .5), len = R((opts.reach || 10) * (.6 + r() * .5));
-        let px = tx, py = ty + Math.round(r() * H * .2);
-        for (let st = 0; st < len; st++){
-          px += Math.cos(ang); py += Math.sin(ang);
-          const w = Math.max(.5, (1 - st / len) * w1 * .9), c = Math.ceil(w);
-          for (let yy = -c; yy <= c; yy++) for (let xx = -c; xx <= c; xx++)
-            if (xx * xx + yy * yy <= w * w + .5) put(Math.round(px + xx), Math.round(py + yy), rp[xx < 0 ? 2 : 1]);
-        }
-      }
-    },
-    // a whole tree: shadow on the ground, trunk and branches, then the crown over them
-    tree(x, baseY, o){
-      const lean = o.lean || 0;
-      p.ellipse(x + lean * .5, baseY + .5, o.rx * .8, 1.5, 'rgba(10,30,15,.3)');
-      p.trunk(x, baseY, o.h, o.bark || R_WOOD, o.seed, {lean, w: o.w, reach: Math.min(o.rx, o.ry) * .95, branches: o.branches});
-      p.canopy(x + lean, baseY - o.h - o.ry * .55, o.rx, o.ry, o.leaf, o.seed + 11, {holes: o.holes ?? .1});
-    },
     strands(cx, topY, rx, len, cols, seed){
       const rp = ramp(cols), CX = R(cx), RX = R(rx), T = R(topY);
       for (let X = CX - RX; X <= CX + RX; X += 2){
@@ -1871,32 +1867,13 @@ function painter(w = DW, h = DH, opts = {}){
         }
       }
     },
-    ground(y0, cols, seed, opts = {}){
-      const rp = ramp(cols), Y0 = R(y0), n = rp.length;
-      for (let Y = Y0; Y < h; Y++) for (let X = 0; X < w; X++){
-        const depth = (Y - Y0) / (h - Y0);
-        put(X, Y, pick(rp, .85 - depth * .55 + (noise(X, Y, 9, seed) - .5) * .5, X, Y));
-      }
-      if (opts.blades !== false) for (let X = 0; X < w; X++){
-        if (hsh(X, 0, seed) > .6) continue;
-        const bh = 1 + Math.floor(hsh(X, 1, seed) * 6);
-        for (let j = 1; j <= bh; j++) put(X, Y0 - j, rp[j === bh ? n - 1 : n - 2]);
-      }
-      (opts.flowers || []).forEach((fc, ci) => {
-        const r = mulberry32(seed + ci * 17);
-        for (let i = 0; i < (opts.count || 14); i++){
-          const X = Math.floor(r() * w), Y = Y0 + 4 + Math.floor(r() * (h - Y0 - 8) * .6), c = rgb(fc);
-          put(X, Y - 1, c); put(X - 1, Y, c); put(X + 1, Y, c); put(X, Y + 1, c); put(X, Y, rgb('#ffe070'));
-        }
-      });
-    },
     hill(fn, cols, seed, opts = {}){
       const rp = ramp(cols), n = rp.length, rim = opts.rim && rgb(opts.rim);
       for (let X = 0; X < w; X++){
         const top = R(fn(X / HD));
         for (let Y = top; Y < h; Y++){
           const depth = Math.min(1, (Y - top) / R(opts.depth || 30));
-          put(X, Y, pick(rp, .9 - depth * .65 + (noise(X, Y, 8, seed) - .5) * .45, X, Y));
+          put(X, Y, pick(rp, .9 - depth * .65 + (noise(X, Y, 8, seed) - .5) * (opts.rough ?? .45), X, Y));
         }
         if (rim) put(X, top, rim);
         if (opts.blades && hsh(X, 3, seed) < .5){
@@ -1905,16 +1882,30 @@ function painter(w = DW, h = DH, opts = {}){
         }
       }
     },
-    pine(x, baseY, hgt, cols, seed){
-      const rp = ramp(cols), CX = R(x), B = R(baseY), H = R(hgt), tier = Math.max(8, Math.round(H / 4));
-      for (let Y = B - R(3); Y < B; Y++) for (let X = CX - 1; X <= CX + 1; X++) put(X, Y, rp[0]);
-      for (let i = 0; i < H - R(3); i++){
-        const Y = B - H + i, ti = i % tier;
-        const w2 = Math.round(ti / tier * H * .16 + i * .2) + (hsh(i, 0, seed) < .3 ? 1 : 0);
-        for (let X = CX - w2; X <= CX + w2; X++){
-          const rel = (X - CX) / (w2 + 1);
-          const v = .55 - rel * .45 + (ti < tier * .2 ? .15 : 0) - (ti > tier - 3 ? .25 : 0) + (hsh(X, Y, seed) - .5) * .25;
-          put(X, Y, pick(rp, v, X, Y));
+    // A pine: overlapping tiers of boughs, each a little wider than the one above, their
+    // lower edges ragged with drooping needle tips. Light comes from one side (opts.sun:
+    // -1 left, 1 right), catching the edges of the boughs on that side; each tier is
+    // darker underneath where the one below tucks under it. cols: dark → light.
+    pine(x, baseY, hgt, cols, seed, opts = {}){
+      const rp = ramp(cols), n = rp.length, CX = R(x), B = R(baseY), H = R(hgt), sun = opts.sun ?? -1;
+      for (let Y = B - R(3); Y < B; Y++) for (let X = CX - 1; X <= CX + 1; X++) put(X, Y, rp[X === CX + sun ? Math.min(n - 1, 1) : 0]);
+      const tiers = Math.max(3, Math.round(H / 13)), top = B - H, body = H - R(3);
+      for (let i = 0; i < tiers; i++){
+        const y0 = top + Math.round(i * body / tiers * .92), y1 = top + Math.round((i + 1) * body / tiers) + 2;
+        const w = Math.max(2, Math.round((i + 1.2) / tiers * H * .17 + 1)), th = y1 - y0;
+        for (let X = CX - w - 1; X <= CX + w + 1; X++){
+          const dx = X - CX, ax = Math.abs(dx) / (w + .5);
+          if (ax > 1) continue;
+          // the bough's lower edge droops toward its tips and is ragged with needles
+          const jag = hsh(X, i, seed) < .5 ? Math.floor(hsh(X, i + 9, seed) * 3) : 0, bot = y1 + Math.round(ax * ax * 2) + jag - (ax > .9 ? 1 : 0);
+          const rise = y0 + Math.round(th * .9 * Math.pow(ax, 1.1));
+          for (let Y = rise; Y <= bot; Y++){
+            const f = (Y - rise) / Math.max(1, bot - rise), lit = -dx * sun / (w + 1);
+            let v = .34 + lit * .3 - f * .22 + (hsh(X >> 1, Y, seed) - .5) * .14;
+            if (Y === rise && lit > -.2) v += .25;                   // the top of each bough catches the light
+            if (lit > .55 && hsh(X, Y, seed + 3) < .5) v += .2;      // needles glinting along the lit edge
+            put(X, Y, pick(rp, v, X, Y));
+          }
         }
       }
     },
@@ -2121,10 +2112,630 @@ const BUTTERFLY = [
   ['w.k.w', 'wwkww', '.wkw.'],
   ['..k..', '.wkw.', '.wkw.'],
 ];
-const PIGEON = [
-  ['..gg.', 'kgggg', '.ggg.', '..r..'],
-  ['.....', 'ggggk', '.ggg.', '..r..'],
+
+// ---------- living foliage ----------
+// Trees, bushes and hedges are painted the way a pixel artist paints them: crowns made
+// of leaf clumps, held up by real limbs. Each clump is a little pile of leaves, and every
+// leaf catches its own light, so lit clumps glitter with lime leaf tops over darker seams
+// while the shaded side settles into deep teal. Clumps on the sunny side of a crown are a
+// touch brighter and those on the far side darker, so the whole crown reads as one lit
+// form. Trunks and limbs are painted once into the background; the clumps are drawn every
+// frame so they can sway in the wind.
+
+// A breeze that rolls across the scene from left to right, in -1..1.
+let windy = 1; // eases up toward 1.7 while it rains
+const WIND = (x, t) => (Math.sin(x * .021 - t * 1.3) * .6 + Math.sin(x * .0075 - t * .55 + 1.7) * .4) * windy;
+
+// leaf palettes, dark → glint: [crevice, dark, mid, light, highlight, glint]
+const PAL_LEAF  = ['#22382e','#355a40','#468a52','#6aad48','#a8d040','#d8ec7c'];
+const PAL_LEAF2 = ['#1e3430','#2f5040','#3d7a4e','#5c9c48','#92c43e','#c8e472'];
+const PAL_BLOSS = ['#4a1830','#8a3456','#c05a7c','#e488a2','#f8b6c6','#fff2f6'];
+const PAL_BLOSS2= ['#3e1630','#782e50','#a84c72','#cc7494','#eaa2b8','#fbe0ea'];
+const PAL_FAR   = ['#4a7678','#548280','#608e86','#6e9a8c','#80aa94','#98bea0'];
+const PAL_IVY   = ['#070a14','#0c1a1c','#132a26','#1c3a2e','#2c5038','#4a6e52'];
+const PAL_BARK  = ['#2a1810','#45291a','#62402a','#845a36','#a87848'];
+
+const CLUMPS = new Map(), MODELS = new Map();
+
+// One clump of leaves, r logical px across its middle. sun is the side the light comes
+// from (-1 left, 1 right); shade (-1..1) darkens or lifts the whole clump; blooms are
+// [light, mid, dark] colour triples for flowers tucked among the sunlit leaves.
+function leafClump(r, pal, variant, shade = 0, blooms, sun = -1){
+  const key = `${r.toFixed(1)}|${pal[2]}|${variant}|${shade}|${blooms ? blooms.length : 0}|${sun}`;
+  if (CLUMPS.has(key)) return CLUMPS.get(key);
+  const R = Math.max(3, r * HD), size = Math.ceil(R * 2.5) + 8, c = size / 2;
+  const p = painter(size, size), rp = pal.map(rgb), rnd = mulberry32(variant * 131 + Math.round(R * 7));
+  // scatter the leaves, thickest in the middle, and pile them so lower leaves lie over higher ones
+  const rl = Math.max(1.8, Math.min(4.2, R * .2)), leaves = [];
+  for (let i = 0, n = Math.max(5, Math.round(R * R / (rl * rl) * 1.6)); i < n; i++){
+    const a = rnd() * 6.28, d = Math.pow(rnd(), .55) * (R - rl * .6);
+    leaves.push({x: c + Math.cos(a) * d * 1.12, y: c + Math.sin(a) * d * .9, r: rl * (.75 + rnd() * .5), k: rnd()});
+  }
+  leaves.sort((a, b) => a.y - b.y);
+  const own = new Int16Array(size * size).fill(-1);
+  leaves.forEach((L, i) => {
+    for (let Y = Math.max(0, Math.floor(L.y - L.r - 1)); Y <= Math.min(size - 1, L.y + L.r + 1); Y++)
+      for (let X = Math.max(0, Math.floor(L.x - L.r - 1)); X <= Math.min(size - 1, L.x + L.r + 1); X++){
+        const dx = X + .5 - L.x, dy = Y + .5 - L.y;
+        if (dx * dx + dy * dy * 1.15 <= L.r * L.r) own[Y * size + X] = i;
+      }
+  });
+  const lx = -sun * .55, bands = new Int8Array(size * size).fill(-1);
+  for (let Y = 0; Y < size; Y++) for (let X = 0; X < size; X++){
+    const i = own[Y * size + X];
+    if (i < 0) continue;
+    const L = leaves[i], nx = (X + .5 - c) / R, ny = (Y + .5 - c) / R, dx = (X + .5 - L.x) / L.r, dy = (Y + .5 - L.y) / L.r;
+    // the clump's own roundness, then each leaf's: lit toward the sun, shaded underneath
+    const form = -(nx * lx + ny * .8) * .85 + .2 + shade * .28;
+    let l = form - (dx * lx * .9 + dy * .65) * .4 + (L.k - .5) * .18;
+    // seams where a leaf tucks under its neighbour show in the light and melt into the shade
+    const below = Y + 1 < size ? own[(Y + 1) * size + X] : -1, side = own[Y * size + X - sun] ?? -1;
+    if (form > -.2 && ((below !== i && below !== -1) || (side !== i && side !== -1 && dx * -sun > .3))) l -= .42;
+    let band = l > .62 ? 4 : l > .28 ? 3 : l > -.1 ? 2 : l > -.45 ? 1 : 0;
+    if (band === 4 && hash2(X, Y, variant) < .08) band = 5;
+    bands[Y * size + X] = band;
+    p.put(X, Y, rp[band]);
+  }
+  // flowers sit on sunlit leaves (roses on a hedge, blossom on a tree)
+  if (blooms) leaves.forEach((L, i) => {
+    const X = Math.round(L.x - .5), Y = Math.round(L.y - .5);
+    if (rnd() > .45 || bands[Y * size + X] < 3) return;
+    const [a, b, d] = blooms[i % blooms.length].map(rgb);
+    if (L.r > 2.6){ p.put(X, Y - 1, a); p.put(X - 1, Y, a); p.put(X, Y, b); p.put(X + 1, Y, b); p.put(X, Y + 1, d); }
+    else { p.put(X, Y, a); p.put(X + 1, Y, b); p.put(X, Y + 1, b); p.put(X + 1, Y + 1, d); }
+  });
+  const cv = p.canvas(); cv.M = Math.round(c); CLUMPS.set(key, cv); return cv;
+}
+
+// Fill an elliptical crown with clumps: big ones for the body, smaller ones around
+// the rim, sorted so lower clumps overlap the ones above them.
+function crownClumps(cx, cy, rx, ry, seed, pal, pal2, blooms){
+  const r = mulberry32(seed), list = [];
+  for (let i = 0, n = Math.round(rx * ry / 45) + 5; i < n; i++){
+    const a = r() * 6.28, d = Math.sqrt(r()) * .72;
+    list.push({cx: cx + Math.cos(a) * d * rx, cy: cy + Math.sin(a) * d * ry, r: ry * (.3 + r() * .24) * (1 - d * .3)});
+  }
+  for (let i = 0, n = Math.round((rx + ry) / 4.5); i < n; i++){
+    const a = Math.PI * (1.05 + r() * .9);
+    list.push({cx: cx + Math.cos(a) * rx * .66, cy: cy + Math.sin(a) * ry * .64, r: ry * (.2 + r() * .14)});
+  }
+  for (let i = 0, n = Math.round(rx / 7); i < n; i++){
+    const a = Math.PI * (.1 + r() * .8);
+    list.push({cx: cx + Math.cos(a) * rx * .68, cy: cy + Math.sin(a) * ry * .55, r: ry * (.2 + r() * .14)});
+  }
+  // no floating clumps: anything not touching a neighbour is pulled in toward the middle
+  for (let pass = 0; pass < 3; pass++) for (const c of list){
+    let best = Infinity, need = 0;
+    for (const o of list) if (o !== c){ const d = Math.hypot(o.cx - c.cx, o.cy - c.cy) - (o.r + c.r) * .72; if (d < best){ best = d; need = d; } }
+    if (need > 0){ const dx = cx - c.cx, dy = cy - c.cy, len = Math.hypot(dx, dy) || 1, m = Math.min(len, need + .5); c.cx += dx / len * m; c.cy += dy / len * m; }
+  }
+  list.sort((a, b) => (a.cy - a.r * .3) - (b.cy - b.r * .3));
+  list.forEach((c, i) => {
+    const u = (c.cx - cx) / rx, v = (c.cy - cy) / ry;
+    c.variant = (seed + i * 7) % 29;
+    c.pal = i % 3 === 0 ? (pal2 || pal) : pal;
+    c.shade = Math.max(-1, Math.min(1, Math.round(-(u * .6 + v * .9))));
+    c.blooms = blooms;
+    c.amp = .4 + Math.max(0, -v + .6) * 1.1;   // the crown's top sways the most
+  });
+  return list;
+}
+
+function drawClumps(k, list, t, still){
+  for (const c of list){
+    const cv = leafClump(c.r, c.pal, c.variant, c.shade, c.blooms, c.sun);
+    const dx = still ? 0 : Math.round(WIND(c.cx, t) * c.amp);
+    k.g.drawImage(cv, Math.round(c.cx * HD - cv.M) + dx, Math.round(c.cy * HD - cv.M));
+  }
+}
+
+// An outlined, shaded stroke along a polyline [[x, y, width], ...] (trunks, branches,
+// roots). The outline goes down first, then the body, lit on the sunny side, with bark streaks.
+function stroke(p, pts, rb, sun = -1){
+  const disc = (cx, cy, r, f) => { const c = Math.ceil(r); for (let y = -c; y <= c; y++) for (let x = -c; x <= c; x++) if (x * x + y * y <= r * r + .3) f(cx + x, cy + y, x); };
+  const walk = f => {
+    for (let i = 0; i < pts.length - 1; i++){
+      const [x0, y0, w0] = pts[i], [x1, y1, w1] = pts[i + 1], steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) * HD));
+      for (let s = 0; s <= steps; s++){ const t = s / steps; f(Math.round((x0 + (x1 - x0) * t) * HD), Math.round((y0 + (y1 - y0) * t) * HD), (w0 + (w1 - w0) * t) * HD / 2); }
+    }
+  };
+  walk((cx, cy, r) => disc(cx, cy, r + .6, (X, Y) => p.put(X, Y, rb[0])));
+  walk((cx, cy, r) => disc(cx, cy, Math.max(.4, r - .4), (X, Y, ox) => {
+    const streak = hash2(X, Y >> 2, 17) < .22 ? -1 : 0;
+    const o = ox * -sun;
+    p.put(X, Y, rb[Math.max(1, Math.min(4, (o < -r * .25 ? 3 : o > r * .3 ? 1 : 2) + streak))]);
+  }));
+}
+
+// A tree. s = {x, y (ground), h (trunk height), rx, ry (crown), pal, pal2, seed, lean, w,
+// lobes, sun, blooms}. The crown is a few lobes of leaves: one on top of the leader and
+// the rest on side limbs that leave the trunk at staggered heights, so sky and branches
+// show through the gaps between them.
+function treeModel(s){
+  const key = 'T' + JSON.stringify(s);
+  if (MODELS.has(key)) return MODELS.get(key);
+  const r = mulberry32(s.seed * 7919 + 3), lean = s.lean || 0, w = s.w || 3, sun = s.sun || -1;
+  const fx = s.x + lean, fy = s.y - s.h, ccy = fy - s.ry * .45;
+  const top = {x: fx + lean * .3 + (r() - .5) * s.rx * .2, y: ccy - s.ry * .3, rx: s.rx * .55, ry: s.ry * .5};
+  const lobes = [top];
+  for (let i = 0, n = s.lobes || 2 + Math.floor(r() * 2.5); i < n; i++){
+    const side = i % 2 ? 1 : -1, d = .5 + r() * .2, lift = .15 + (i / n) * .35 + r() * .1;
+    lobes.push({x: fx + side * s.rx * d, y: ccy + s.ry * (.35 - lift), rx: s.rx * (.45 + r() * .12), ry: s.ry * (.42 + r() * .12), side, h: .45 + (i / n) * .4});
+  }
+  const clumps = [];
+  lobes.forEach((L, li) => clumps.push(...crownClumps(L.x, L.y, L.rx, L.ry, s.seed + li * 13, s.pal, s.pal2, s.blooms)));
+  shadeClumps(clumps, fx, ccy, s.rx, s.ry, sun);   // the crown's top sways the most
+  clumps.sort((a, b) => (a.cy - a.r * .3) - (b.cy - b.r * .3));
+  // the trunk: a root flare, a gentle S, then the leader on up into the top lobe
+  const mid = [s.x + lean * .5 + (r() - .5) * 1.5, s.y - s.h * .5], lead = [top.x, top.y + top.ry * .3];
+  const trunk = [[s.x, s.y + .5, w * 1.9], [s.x + lean * .1, s.y - 2.5, w * 1.15], [mid[0], mid[1], w * .95], [fx, fy, w * .8], [lead[0], lead[1], w * .45]];
+  const branches = [];
+  for (const L of lobes.slice(1)){
+    const f = L.h < .5 ? L.h * 2 : (L.h - .5) * 1.4;
+    const [x0, y0, x1, y1] = L.h < .5 ? [mid[0], mid[1], fx, fy] : [fx, fy, lead[0], lead[1]];
+    const bx = x0 + (x1 - x0) * f, by = y0 + (y1 - y0) * f, ex = L.x - L.side * L.rx * .15, ey = L.y + L.ry * .25;
+    branches.push([[bx, by, w * .6], [bx + (ex - bx) * .55, by + (ey - by) * .35 - 1, w * .42], [ex, ey, w * .26]]);
+    // twigs inside the lobe, to show through the gaps
+    for (let t = 0; t < 2; t++){
+      const a = -Math.PI / 2 + L.side * (.3 + r() * .9);
+      branches.push([[ex, ey, w * .24], [ex + Math.cos(a) * L.rx * .45, ey + Math.sin(a) * L.ry * .45, w * .12]]);
+    }
+  }
+  const roots = [-1, 1].map(d => [[s.x + d * w * .4, s.y - .8, w * .8], [s.x + d * w * 1.6, s.y + .2, w * .4], [s.x + d * w * 2.6, s.y + .6, .5]]);
+  const m = {s, cx: fx, topY: fy, clumps, trunk, branches, roots};
+  MODELS.set(key, m); return m;
+}
+
+// Paint a tree's shade, roots, branches and trunk into the background.
+function paintTree(p, m){
+  const s = m.s, rb = PAL_BARK.map(rgb);
+  p.ellipse(m.cx, s.y + .6, s.rx * .95, 2, 'rgba(10,30,15,.26)');
+  p.ellipse(m.cx, s.y + .4, s.rx * .55, 1.3, 'rgba(10,30,15,.24)');
+  const sun = s.sun || -1;
+  for (const b of m.branches) stroke(p, b, rb, sun);
+  for (const rt of m.roots) stroke(p, rt, rb, sun);
+  stroke(p, m.trunk, rb, sun);
+}
+
+// Shade each clump by where it sits in a crown (sunny top side bright, far bottom side dark).
+function shadeClumps(clumps, cx, cy, rx, ry, sun = -1, amp = 1){
+  for (const c of clumps){
+    const u = (c.cx - cx) / rx, v = (c.cy - cy) / ry;
+    c.shade = Math.max(-1, Math.min(1, Math.round(-(u * -sun * .6 + v * .9))));
+    c.amp = (.4 + Math.max(0, -v + .6) * 1.1) * amp;
+    c.sun = sun;
+  }
+  return clumps;
+}
+
+// A bush: a low crown sitting on the ground. s = {x, y (ground), w, h, pal, pal2, seed, blooms, sun}
+function bushModel(s){
+  const key = 'B' + JSON.stringify(s);
+  if (MODELS.has(key)) return MODELS.get(key);
+  const cy = s.y - s.h * .5, clumps = crownClumps(s.x, cy, s.w / 2, s.h / 2, s.seed, s.pal, s.pal2, s.blooms);
+  const m = {s, clumps: shadeClumps(clumps, s.x, cy, s.w / 2, s.h / 2, s.sun || -1, .5)};
+  MODELS.set(key, m); return m;
+}
+
+// A hedge: a back row of bigger clumps and a front row of smaller ones along a line, its
+// top uneven. s = {x0, x1, y (base), h, pal, pal2, seed, blooms, sun}
+function hedgeModel(s){
+  const key = 'H' + JSON.stringify(s);
+  if (MODELS.has(key)) return MODELS.get(key);
+  const r = mulberry32(s.seed * 53 + 1), clumps = [];
+  for (const [row, yf, sz] of [[1, .62, .42], [0, .3, .32]]){
+    for (let x = s.x0 + (row ? 0 : 3); x < s.x1;){
+      const rad = s.h * sz * (.8 + r() * .45);
+      clumps.push({cx: Math.min(x, s.x1 - rad * .6), cy: s.y - s.h * yf + (r() - .5) * s.h * .18, r: rad, row});
+      x += rad * (1.05 + r() * .45);
+    }
+  }
+  // the back row goes down first, then the front row over it
+  clumps.sort((a, b) => b.row - a.row || a.cy - b.cy);
+  clumps.forEach((c, i) => { c.variant = (s.seed + i * 5) % 29; c.pal = i % 3 ? s.pal : (s.pal2 || s.pal); c.blooms = s.blooms; });
+  const m = {s, clumps: shadeClumps(clumps, (s.x0 + s.x1) / 2, s.y - s.h * .5, (s.x1 - s.x0) / 2, s.h / 2, s.sun || -1, .6)};
+  for (const c of m.clumps) c.shade = Math.max(-1, Math.min(1, Math.round(-((c.cy - (s.y - s.h * .5)) / (s.h / 2)) * .9)));
+  MODELS.set(key, m); return m;
+}
+
+// Distant trees, painted straight into the background: too far away to sway.
+function paintFarTrees(p, x0, x1, base, pal, seed, sun = -1){
+  const r = mulberry32(seed);
+  for (let x = x0; x < x1;){
+    // some trees are just a mound, others stand taller with a clump or two stacked on top
+    const rad = 3 + r() * 3.5, tiers = r() < .45 ? 1 : r() < .7 ? 2 : 3, y = (typeof base === 'function' ? base(x) : base) - rad * .6 - r() * 2;
+    for (let i = 0; i < tiers; i++){
+      const rr = rad * (1 - i * .22), cv = leafClump(rr, pal, Math.floor(r() * 29), i ? 1 : 0, null, sun);
+      p.blit(cv, x + (r() - .5) * 2, y - i * rad * .9, cv.M);
+    }
+    x += rad * (1 + r() * .6);
+  }
+}
+
+// ---------- grass, flowers and things that sway ----------
+// The lawn's body is painted once: broad sunlit and shaded patches brushed with
+// thousands of little blade tufts. Its top edge is a fringe of tufts drawn every
+// frame, leaning with the wind as gusts roll across, and flowers on stems sway with it.
+
+// grass palette, deep → tip: [deep, dark, mid, light, bright, tip]
+const PAL_GRASS = ['#2c3b34','#3a5c4c','#3f8a50','#55a65a','#76cc5c','#a6e272'];
+const PAL_GRASS_NIGHT = ['#050c0a','#081310','#0c1a14','#11241a','#183020','#244232'];
+const PAL_DUNE  = ['#4a4a2a','#6a6a36','#8a8a44','#a8a456','#c4bc6a','#e0d68a'];
+
+// One fan of pointed grass blades rooted at (X, Y), in device pixels. lv (0..3) is the
+// light level where it grows: blades are one step lighter than the ground under them, and
+// big tufts get a lit left edge and bright tips. lean (-1..1) bends the whole fan.
+function grassFan(put, rp, X, Y, size, lv, lean, r){
+  const big = size >= 6, n = size < 4 ? 2 : big ? 3 + Math.floor(r() * 3) : 3;
+  const body = rp[Math.min(5, lv + 1)], edge = rp[Math.min(5, lv + 2)], tip = rp[Math.min(5, lv + 2 + (lv >= 2 && big ? 1 : 0))];
+  const blades = [];
+  for (let b = 0; b < n; b++){
+    const u = (b / (n - 1)) * 2 - 1;
+    blades.push({u, ang: u * (.5 + r() * .3) + lean * .3 + (r() - .5) * .2, bend: u * .6 + lean * .4,
+      L: size * (1 - Math.abs(u) * .3) * (.8 + r() * .4), W: big ? Math.min(3, size * .25) : 1});
+  }
+  // the outer blades first, so the middle ones stand in front
+  blades.sort((a, b) => Math.abs(b.u) - Math.abs(a.u));
+  for (const bl of blades){
+    const steps = Math.ceil(bl.L);
+    for (let s = 0; s <= steps; s++){
+      const t = s / steps, a = bl.ang + bl.bend * t * t, x = X + Math.sin(a) * bl.L * t, y = Math.round(Y - Math.cos(a) * bl.L * t);
+      const wid = Math.max(1, Math.round(bl.W * (1 - t * .8))), x0 = Math.round(x - (wid - 1) / 2);
+      for (let i = 0; i < wid; i++) put(x0 + i, y, big && t > .75 ? tip : !big && s === steps ? edge : big && i === 0 && wid > 1 ? edge : body);
+    }
+  }
+}
+
+const TUFTS = new Map();
+// A tuft sprite for the swaying fringes: one grass fan, size device px tall, at light level
+// lv, bent by lean (-2..2). Its root is at (cv.ax, cv.ay).
+function tuftSprite(variant, lean, pal, size = 6, lv = 2){
+  const key = `${variant}|${lean}|${pal[3]}|${size}|${lv}`;
+  if (TUFTS.has(key)) return TUFTS.get(key);
+  const W = Math.ceil(size * 2.6) + 4, H = Math.ceil(size * 1.25) + 3, p = painter(W, H);
+  grassFan(p.put, pal.map(rgb), W >> 1, H - 1, size, lv, lean * .55, mulberry32(variant * 131 + 7));
+  const cv = p.canvas(); cv.ax = W >> 1; cv.ay = H - 1; TUFTS.set(key, cv); return cv;
+}
+
+// Flowers seen from a little above: five round petals around a heart, a darker crease
+// between each pair of petals, and the petals facing away from the light in shade.
+// [petal, petal shade, heart, heart shade, crease]
+const FLOWER_KINDS = {
+  daisy:  ['#ffffff', '#dcd8ea', '#f5c542', '#c8902a', '#9c98b8'],
+  peach:  ['#f8eedc', '#e0c6a4', '#e07a32', '#a8501e', '#b08a68'],
+  pink:   ['#f8b8d2', '#d880a6', '#ffe070', '#e0a030', '#a8507a'],
+  blue:   ['#b0d0fa', '#7894dc', '#fff6c0', '#e8c060', '#4a62a8'],
+  butter: ['#fff070', '#e8b830', '#f08a2a', '#b85a1a', '#b07a20'],
+  poppy:  ['#f4684e', '#c63c30', '#3a2020', '#1a1010', '#8a2420'],
+};
+// paint a flower head of radius R (device px) centred on (hx, hy) with put()
+function flowerHead(put, hx, hy, kind, R){
+  const [pet, petD, mid, midD, gap] = FLOWER_KINDS[kind].map(rgb), ph = kind.length * 1.3 + .3, n = Math.ceil(R) + 1;
+  for (let dy = -n; dy <= n; dy++) for (let dx = -n; dx <= n; dx++){
+    const yy = dy / .78, d = Math.hypot(dx, yy), lobe = Math.abs(Math.cos(2.5 * Math.atan2(yy, dx) + ph));
+    if (d > R * (.5 + .5 * lobe) + .3) continue;
+    put(hx + dx, hy + dy, d < R * .32 ? (dx + dy < 0 ? mid : midD) : lobe < .38 && d > R * .4 ? gap
+      : (d < R * .45 && dx + dy > 0) || dx * .35 + dy * .85 > R * .4 ? petD : pet);
+  }
+}
+const FLOWERS = new Map();
+function flowerSprite(kind, lean, stem = 3, big = false){
+  const key = `${kind}|${lean}|${stem}|${big}`;
+  if (FLOWERS.has(key)) return FLOWERS.get(key);
+  const W = 13, H = stem + 9, p = painter(W, H), green = rgb('#2f6a40'), leaf = rgb('#4a9a52');
+  for (let j = 0; j < stem; j++){ const x = Math.round(6 + lean * (j / stem) * .9); p.put(x, H - 1 - j, green); if (j === 1 && stem > 2) p.put(x - 1, H - 1 - j, leaf); }
+  flowerHead(p.put, Math.round(6 + lean * .9), H - 1 - stem - (big ? 3 : 2), kind, big ? 3.6 : 2.6);
+  const cv = p.canvas(); FLOWERS.set(key, cv); return cv;
+}
+// just a head, for flowers whose stems are drawn as they grow (the park's music flowers)
+function flowerHeadSprite(kind, R){
+  const key = `head|${kind}|${R}`;
+  if (FLOWERS.has(key)) return FLOWERS.get(key);
+  const n = Math.ceil(R) + 2, p = painter(n * 2 + 1, n * 2 + 1);
+  flowerHead(p.put, n, n, kind, R);
+  const cv = p.canvas(); cv.M = n; FLOWERS.set(key, cv); return cv;
+}
+
+// The lean (-2..2) a blade at x has right now: a gentle constant breeze plus gusts.
+const leanAt = (x, t, gain = 1.7) => Math.max(-2, Math.min(2, Math.round(WIND(x, t) * gain + .35)));
+
+// A row of tufts along an edge (edge(x) → y). Tall clumps alternate with lower stretches.
+// opts: size (device px), lv (light level), dense, depth (scatter below the edge, logical px)
+function fringe(edge, x0, x1, seed, opts = {}){
+  const r = mulberry32(seed), list = [], base = opts.size || 6;
+  for (let x = x0; x < x1;){
+    const clump = vnoise(x * 3, 0, 22, seed);
+    list.push({x, y: edge(x) + .5 + r() * (opts.depth || 0), v: Math.floor(r() * 9), size: Math.max(3, Math.round(base * (.55 + clump * .8 + r() * .2))), lv: opts.lv ?? 2});
+    x += (1.4 + r() * 1.6) / (opts.dense || 1);
+  }
+  return list.sort((a, b) => a.y - b.y);
+}
+function drawTufts(k, list, pal, t, still){
+  for (const tf of list){
+    const cv = tuftSprite(tf.v, still ? 0 : leanAt(tf.x, t), pal, tf.size, tf.lv);
+    k.g.drawImage(cv, Math.round(tf.x * HD) - cv.ax, Math.round(tf.y * HD) - cv.ay);
+  }
+}
+// Little patches of flowers: a few heads of one kind growing together, bigger toward the
+// front. opts.avoid(x, y) keeps them out from under benches and trunks.
+function flowerPatches(x0, x1, y0, y1, n, kinds, seed, opts = {}){
+  const r = mulberry32(seed), list = [];
+  for (let i = 0, tries = 0; i < n && tries < n * 20; tries++){
+    const cx = x0 + r() * (x1 - x0), cy = y0 + r() * (y1 - y0), kind = kinds[Math.floor(r() * kinds.length)];
+    if (opts.avoid && opts.avoid(cx, cy)) continue;
+    i++;
+    const near = (cy - y0) / Math.max(1, y1 - y0);
+    for (let j = 0, m = 2 + Math.floor(r() * 4); j < m; j++){
+      const x = cx + (r() - .5) * 8, y = cy + (r() - .5) * 3;
+      if (opts.avoid && opts.avoid(x, y)) continue;
+      list.push({x, y, kind, stem: 1 + Math.floor(r() * 3), big: r() < .25 + near * .5});
+    }
+  }
+  return list.sort((a, b) => a.y - b.y);
+}
+function drawFlowers(k, list, t, still){
+  for (const f of list){
+    const cv = flowerSprite(f.kind, still ? 0 : leanAt(f.x, t, 1.2), f.stem, f.big);
+    k.g.drawImage(cv, Math.round(f.x * HD) - 6, Math.round(f.y * HD) - cv.height + 1);
+  }
+}
+
+// ---- dark leaves framing the bottom corners ----
+// Long blades arcing up out of the corner, nearly silhouettes because they're so close:
+// a dark outline, a body, the upper edge catching a little sky light. Back blades are
+// darker than front ones. They sway with the wind like everything else.
+// pal: [outline, body, lit edge, rim]
+const PAL_FROND = ['#160c12','#2a1a22','#3c2832','#584050'];
+const PAL_FROND_NIGHT = ['#04050a','#090b14','#10141f','#1a2030'];
+const PAL_FROND_GREEN = ['#0a1410','#14241c','#20362a','#30503a'];
+const PAL_FROND_DUSK = ['#140a16','#241424','#382030','#6a4048'];
+const FRONDS = new Map();
+function frondSprite(lean, pal, seed, W = 96, H = 76){
+  const key = `${lean}|${pal[1]}|${seed}|${W}`;
+  if (FRONDS.has(key)) return FRONDS.get(key);
+  const p = painter(W, H), rp = pal.map(rgb), r = mulberry32(seed), blades = [];
+  for (let i = 0, n = 7 + Math.floor(r() * 3); i < n; i++){
+    const a0 = -.5 + r() * 1.4, L = 32 + r() * 42;
+    blades.push({x: 2 + r() * W * .5, a0, L, w: 5 + r() * 4, bend: Math.sign(a0 || 1) * (.35 + r() * .7), back: r() < .4});
+  }
+  // the back blades first, then the longest of the rest behind the shorter
+  blades.sort((a, b) => (b.back - a.back) || b.L - a.L);
+  for (const b of blades){
+    // the centre line rises out from below the bottom edge and curls over as it goes
+    const pts = [];
+    for (let s = 0, x = b.x, y = H + 3; s <= b.L; s += .5){
+      const t = s / b.L, a = b.a0 + b.bend * Math.pow(t, 1.5) + lean * .09 * t * t;
+      pts.push([x, y, t, a]);
+      x += Math.sin(a) * .5; y -= Math.cos(a) * .5;
+    }
+    const shade = b.back ? -1 : 0, col = i => rp[Math.max(0, Math.min(3, i + shade))];
+    for (const pass of [0, 1]) for (const [x, y, t, a] of pts){
+      const half = b.w * (1 - Math.pow(t, 1.3)) / 2 + (pass ? 0 : .9), nx = Math.cos(a), ny = Math.sin(a), up = ny < 0 ? 1 : -1;
+      for (let o = -half; o <= half; o += .5){
+        const X = Math.round(x + nx * o), Y = Math.round(y + ny * o);
+        if (pass === 0){ p.put(X, Y, rp[0]); continue; }
+        // the upper edge catches the sky; a dark rib runs down the middle of the wider blades
+        const side = o * up / Math.max(.5, half);
+        p.put(X, Y, side > .6 && t > .2 ? col(3) : Math.abs(o) < .3 && b.w > 7 && t < .7 ? rp[0] : side > 0 ? col(2) : col(1));
+      }
+    }
+  }
+  const cv = p.canvas(); FRONDS.set(key, cv); return cv;
+}
+// fronds in both bottom corners (the right one mirrored)
+function drawFronds(k, t, still, pal = PAL_FROND, seeds = [3, 8]){
+  const g = k.g;
+  const L = frondSprite(still ? 0 : leanAt(8, t), pal, seeds[0]);
+  g.drawImage(L, -6, DH - L.height);
+  const R = frondSprite(still ? 0 : -leanAt(SW - 8, t), pal, seeds[1]);
+  g.save(); g.translate(DW + 6, 0); g.scale(-1, 1); g.drawImage(R, 0, DH - R.height); g.restore();
+}
+
+// ---- birds that fly in, land, potter about and fly off again ----
+// Each bird is drawn from a few simple shapes (head, body, tail, wings, legs) into a
+// tiny sprite, then given an outline. Facing right; flipped when it faces left.
+// colours: b back, B wing / tail, r breast, R breast light, w belly, o beak, e eye, l legs, k outline
+const BIRD_KINDS = {
+  robin:   {b:'#6e4c38', B:'#4e3426', r:'#e2683a', R:'#f69a5c', w:'#efe2cc', o:'#e8b040', e:'#0a0606', l:'#3a2418', k:'#24140e'},
+  sparrow: {b:'#86603e', B:'#5a3e28', r:'#c8b498', R:'#ded0b8', w:'#eee6d6', o:'#5a4a3a', e:'#0a0606', l:'#4a3628', k:'#26180e'},
+  blue:    {b:'#4a78c8', B:'#2e4e94', r:'#e8945a', R:'#f8b47a', w:'#f2ece0', o:'#2a2a3a', e:'#0a0606', l:'#2a2a3a', k:'#141a2e'},
+  gull:    {b:'#e8eaf2', B:'#9aa2b8', r:'#ffffff', R:'#ffffff', w:'#ffffff', o:'#f0b030', e:'#141418', l:'#e09030', k:'#3a3e52'},
+  pigeon:  {b:'#8a8aa0', B:'#6a6a82', r:'#9a8aa8', R:'#b0a6c0', w:'#a8a8bc', o:'#e0a0a0', e:'#ff7040', l:'#d0702a', k:'#2e2e40'},
+};
+const inE = (x, y, cx, cy, rx, ry) => ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1;
+const nearSeg = (x, y, x0, y0, x1, y1, w) => {
+  const dx = x1 - x0, dy = y1 - y0, t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - x0 - dx * t, y - y0 - dy * t) <= w;
+};
+// shapes in a 14×11 box, feet on the bottom row; each returns a colour key or ''
+const BIRD_FRAMES = {
+  perch(x, y){
+    if (x > 11.3 && x < 13.6 && y > 3.6 && y < 4.8) return 'o';
+    if (inE(x, y, 9.8, 3.8, 2.2, 2.1)) return x > 10.4 && x < 11.4 && y > 2.6 && y < 3.6 ? 'e' : y > 4.6 && x > 9.8 ? 'r' : 'b';
+    if (inE(x, y, 7, 6.6, 4.3, 2.8)) return x > 6.8 && y > 5 ? (y > 8 ? 'w' : x > 9 && y < 6.6 ? 'R' : 'r') : y > 8.2 ? 'w' : x < 7.2 && y < 7.6 ? 'B' : 'b';
+    if (nearSeg(x, y, 3.2, 7, .9, 9.6, .9)) return 'B';
+    if ((Math.abs(x - 6.6) < .5 || Math.abs(x - 8.4) < .5) && y > 9 && y < 11) return 'l';
+    return '';
+  },
+  peck(x, y){
+    if (x > 12.3 && x < 13.6 && y > 7.4 && y < 9.6) return 'o';
+    if (inE(x, y, 10.8, 7, 2.1, 2)) return x > 11.4 && x < 12.4 && y > 6 && y < 7 ? 'e' : 'b';
+    if (inE(x, y, 7, 6.6, 4.3, 2.8)) return x > 7 && y > 6 ? (y > 8 ? 'w' : 'r') : y > 8.2 ? 'w' : x < 7.2 && y < 7.6 ? 'B' : 'b';
+    if (nearSeg(x, y, 3.2, 6.2, .9, 4.4, .9)) return 'B';
+    if ((Math.abs(x - 6.6) < .5 || Math.abs(x - 8.4) < .5) && y > 9 && y < 11) return 'l';
+    return '';
+  },
+  up(x, y){ return BIRD_FRAMES.fly(x, y, -1); },
+  down(x, y){ return BIRD_FRAMES.fly(x, y, 1); },
+  fly(x, y, wing){
+    if (x > 12.6 && x < 14 && y > 4.6 && y < 5.6) return 'o';
+    if (inE(x, y, 11, 4.8, 1.9, 1.8)) return x > 11.4 && x < 12.4 && y > 3.6 && y < 4.6 ? 'e' : 'b';
+    if (inE(x, y, 7.2, 5.8, 4.4, 1.9)) return y > 6.4 ? (x > 7.5 ? 'r' : 'w') : 'b';
+    if (nearSeg(x, y, 3.2, 5.6, .6, 5, .9)) return 'B';
+    if (wing < 0 && nearSeg(x, y, 7.6, 4.6, 4.4, .6, 1.3)) return 'B';
+    if (wing > 0 && nearSeg(x, y, 7.6, 6.6, 4.8, 10.2, 1.3)) return 'B';
+    return '';
+  },
+  // wings flung up and the tail fanned down, braking to land
+  flare(x, y){
+    if (x > 11.6 && x < 13.2 && y > 4.4 && y < 5.4) return 'o';
+    if (inE(x, y, 10.2, 4.6, 2, 1.9)) return x > 10.6 && x < 11.6 && y > 3.4 && y < 4.4 ? 'e' : 'b';
+    if (inE(x, y, 7, 6.4, 3.8, 2.6)) return x > 7 && y > 5.4 ? 'r' : 'b';
+    if (nearSeg(x, y, 3.6, 7.4, 1.2, 9.8, 1.2)) return 'B';
+    if (nearSeg(x, y, 7.2, 4.6, 3.4, .8, 1.3) || nearSeg(x, y, 7.8, 4.6, 9.6, .8, 1.1)) return 'B';
+    if ((Math.abs(x - 7) < .5 || Math.abs(x - 8.6) < .5) && y > 8.6 && y < 10.4) return 'l';
+    return '';
+  },
+};
+const BIRDS = new Map();
+function birdSprite(kind, frame, dir){
+  const key = `${kind}|${frame}|${dir}`;
+  if (BIRDS.has(key)) return BIRDS.get(key);
+  const W = 15, H = 11, C = BIRD_KINDS[kind], cells = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) cells.push(BIRD_FRAMES[frame](x + .5, y + .5));
+  const p = painter(W, H), at = (x, y) => x < 0 || y < 0 || x >= W || y >= H ? '' : cells[y * W + x];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+    const c = at(x, y), X = dir > 0 ? x : W - 1 - x;
+    if (c) p.put(X, y, rgb(C[c]));
+    // a dark outline hugs the bird, but not its thin legs and beak
+    else if ([[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const n = at(x + dx, y + dy); return n && n !== 'l' && n !== 'o'; })) p.put(X, y, rgb(C.k));
+  }
+  const cv = p.canvas(); BIRDS.set(key, cv); return cv;
+}
+
+// A flock that visits a set of perches. perches: [{x, y, ground}] (feet position, logical).
+// scare(x, y) says whether something nearby should send a bird off.
+function birdLife(k, t, dt, key, n, perches, kinds, opts = {}){
+  const flock = drifting(key, n, i => ({state: 'away', wait: 2 + i * 5 + Math.random() * 6, kind: kinds[i % kinds.length], x: -20, y: 0, dir: 1}));
+  const taken = new Set(flock.filter(b => b.state !== 'away').map(b => b.perch));
+  for (const b of flock){
+    if (b.state === 'away'){
+      if ((b.wait -= dt) > 0) continue;
+      const free = perches.filter(q => !taken.has(q));
+      if (!free.length){ b.wait = 3; continue; }
+      const q = free[Math.floor(Math.random() * free.length)], fromLeft = Math.random() < .5;
+      b.perch = q; taken.add(q);
+      b.spot = {x: q.x + (q.w ? (Math.random() - .5) * q.w : 0), y: q.y};
+      b.from = {x: fromLeft ? -16 : SW + 16, y: 8 + Math.random() * 40};
+      b.ctrl = {x: (b.from.x + b.spot.x) / 2, y: Math.min(b.from.y, b.spot.y) - 10 - Math.random() * 20};
+      b.u = 0; b.dur = Math.hypot(b.spot.x - b.from.x, b.spot.y - b.from.y) / (opts.speed || 55);
+      b.state = 'in'; b.dir = fromLeft ? 1 : -1;
+    } else if (b.state === 'in' || b.state === 'out'){
+      b.u = Math.min(1, b.u + dt / b.dur);
+      // swoop in and slow down to land; leave slowly and pick up speed
+      const u = b.state === 'in' ? 1 - (1 - b.u) ** 2 : b.u * b.u, A = b.from, B = b.ctrl, Cc = b.state === 'in' ? b.spot : b.to;
+      b.x = (1 - u) ** 2 * A.x + 2 * (1 - u) * u * B.x + u * u * Cc.x;
+      b.y = (1 - u) ** 2 * A.y + 2 * (1 - u) * u * B.y + u * u * Cc.y;
+      if (b.u >= 1){
+        if (b.state === 'in'){ b.state = 'perch'; b.stay = 6 + Math.random() * 14; b.act = 'idle'; b.actT = 1; b.hop = 0; }
+        else { b.state = 'away'; b.wait = 6 + Math.random() * 14; b.perch = null; }
+      }
+    } else {
+      b.stay -= dt; b.actT -= dt;
+      if (b.actT <= 0){
+        // potter about: look around, peck at the ground, hop along a rail
+        const r = Math.random();
+        b.act = b.perch.ground && r < .45 ? 'peck' : r < .7 ? 'look' : r < .85 ? 'hop' : 'idle';
+        b.actT = b.act === 'peck' ? .9 : b.act === 'hop' ? .45 : .8 + Math.random() * 1.5;
+        if (b.act === 'look') b.dir *= -1;
+        if (b.act === 'hop'){ const w = b.perch.w || 0; b.hopFrom = b.x; b.hopTo = Math.max(b.perch.x - w / 2, Math.min(b.perch.x + w / 2, b.x + b.dir * (2 + Math.random() * 3))); b.hopT = 0; }
+      }
+      if (b.act === 'hop'){ b.hopT = Math.min(1, b.hopT + dt / .45); b.x = b.hopFrom + (b.hopTo - b.hopFrom) * b.hopT; b.hop = Math.sin(Math.PI * b.hopT) * 2; }
+      else b.hop = 0, b.x = b.x ?? b.spot.x;
+      const spooked = opts.scare && opts.scare(b.x, b.y);
+      if (b.stay <= 0 || spooked){
+        const right = spooked ? Math.random() < .5 : b.dir > 0;
+        b.state = 'out'; b.u = 0; b.from = {x: b.x, y: b.y}; b.dir = right ? 1 : -1;
+        b.to = {x: right ? SW + 20 : -20, y: 4 + Math.random() * 30};
+        b.ctrl = {x: b.x + (right ? 30 : -30), y: b.y - 25};
+        b.dur = Math.hypot(b.to.x - b.x, b.to.y - b.y) / ((opts.speed || 55) * 1.3);
+      }
+    }
+    if (b.state === 'away') continue;
+    let frame;
+    if (b.state === 'perch') frame = b.act === 'peck' && b.actT % .45 > .2 ? 'peck' : 'perch';
+    else if (b.state === 'in' && b.u > .82) frame = 'flare';
+    else frame = Math.floor(t * 14 + b.x) % 2 ? 'up' : 'down';
+    if (b.state === 'in' || b.state === 'out') b.dir = (b.state === 'in' ? b.spot.x - b.x : b.to.x - b.x) >= 0 ? 1 : -1;
+    const cv = birdSprite(b.kind, frame, b.dir);
+    k.g.drawImage(cv, Math.round(b.x * HD) - 7, Math.round((b.y - (b.hop || 0)) * HD) - cv.height);
+  }
+}
+
+// ---- fireflies, reeds, fish ----
+// fireflies drifting low and glowing on and off, each at its own pace
+function fireflies(k, t, dt, key, n, x0, x1, y0, y1){
+  for (const f of drifting(key, n, () => ({x: x0 + Math.random() * (x1 - x0), y: y0 + Math.random() * (y1 - y0), p: Math.random() * 9}))){
+    const ang = vnoise(t * .3 + f.p * 7, f.p, 1, 5) * Math.PI * 4;
+    f.x += Math.cos(ang) * 5 * dt; f.y += Math.sin(ang) * 3 * dt;
+    if (f.x < x0) f.x = x1; if (f.x > x1) f.x = x0;
+    f.y = clamp(f.y, y0, y1);
+    const b = Math.sin(t * 1.3 + f.p * 2.1);
+    if (b < .15) continue;
+    k.glow(f.x, f.y, 3, '#d8ff7a', b * .55);
+    k.dot(f.x, f.y, b > .6 ? '#f4ffc0' : '#b8e060');
+  }
+}
+// reeds and cattails at the water's edge: thin blades from a muddy foot, a few brown heads
+const PAL_REED = ['#04060c','#0a1220','#132238','#22385a'];
+function reedBed(x0, x1, baseY, seed){
+  const r = mulberry32(seed), list = [];
+  for (let x = x0; x < x1; x += .8 + r() * 1.6) list.push({x, y: baseY + r() * 6, h: 12 + r() * 22, bend: (r() - .5) * .5, head: r() < .18});
+  return list.sort((a, b) => a.y - b.y);
+}
+function drawReeds(k, list, t, still, pal = PAL_REED){
+  const g = k.g;
+  for (const rd of list){
+    const lean = (still ? 0 : WIND(rd.x, t) * .7) + rd.bend, n = Math.round(rd.h * HD);
+    for (let j = 0; j < n; j++){
+      const f = j / n, X = Math.round(rd.x * HD + lean * f * f * rd.h * .9), Y = Math.round(rd.y * HD) - j;
+      g.fillStyle = f > .8 ? pal[3] : f > .35 ? pal[2] : pal[1]; g.fillRect(X, Y, f < .72 ? 2 : 1, 1);
+      if (f < .72 && f > .3){ g.fillStyle = pal[3]; g.fillRect(X + 1, Y, 1, 1); }
+      if (rd.head && f > .62 && f < .8){ g.fillStyle = f < .66 ? '#5a3a26' : '#3a2418'; g.fillRect(X - 1, Y, 3, 1); }
+    }
+  }
+}
+// now and then a fish jumps: a silver arc, a splash, then rings spreading on the water
+function fishJumps(k, t, dt, key, x0, x1, y0, y1){
+  const f = pst[key] ||= {wait: 4 + Math.random() * 6, u: -1, x: 0, y: 0, dir: 1, rings: []};
+  if (f.u < 0 && (f.wait -= dt) <= 0){ f.u = 0; f.x = x0 + Math.random() * (x1 - x0); f.y = y0 + Math.random() * (y1 - y0); f.dir = Math.random() < .5 ? 1 : -1; f.rings.push({x: f.x, y: f.y, age: 0}); }
+  if (f.u >= 0){
+    f.u += dt / .8;
+    if (f.u >= 1){ f.u = -1; f.wait = 6 + Math.random() * 10; f.rings.push({x: f.x + f.dir * 7, y: f.y, age: 0}); }
+    else {
+      const x = f.x + f.dir * 7 * f.u, y = f.y - Math.sin(Math.PI * f.u) * 6, nose = f.dir * Math.cos(Math.PI * f.u);
+      k.rect(x - 1, y - .5, 2.5, 1, '#c8d0e8'); k.rect(x + nose * 1.5, y - .5 - nose * .5, .5, .5, '#e8eeff'); k.rect(x - f.dir * 1.5, y - .5 + nose * .5, 1, .5, '#8a94b8');
+    }
+  }
+  const g = k.g;
+  for (const rg of f.rings){
+    rg.age += dt;
+    const rx = (1 + rg.age * 7) * HD, ry = rx * .3, a = Math.max(0, .6 - rg.age * .3);
+    g.fillStyle = `rgba(200,214,255,${a})`;
+    for (let i = 0; i < 40; i++){ const th = i / 40 * TAU; g.fillRect(Math.round(rg.x * HD + Math.cos(th) * rx), Math.round(rg.y * HD + Math.sin(th) * ry), 1, 1); }
+  }
+  f.rings = f.rings.filter(rg => rg.age < 2);
+}
+
+// ---- the park's lie of the land ----
+const PARK_FAR = x => 86 - 8 * Math.sin(x * .012 + 1) - 3 * Math.sin(x * .05);
+const PARK_NEAR = x => 100 - 5 * Math.sin(x * .02 + 3) - 2 * Math.sin(x * .07);
+const parkTrees = () => [
+  treeModel({x: 30, y: 112, h: 20, rx: 26, ry: 19, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 6, lean: 1, sun: 1}),
+  treeModel({x: 110, y: 109, h: 13, rx: 14, ry: 11, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 7, sun: 1, lobes: 2}),
+  treeModel({x: 252, y: 112, h: 21, rx: 28, ry: 18, pal: PAL_BLOSS, pal2: PAL_BLOSS2, seed: 5, lean: -2, sun: 1}),
+  treeModel({x: 304, y: 112, h: 17, rx: 18, ry: 14, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 8, lean: 2, sun: 1}),
 ];
+const parkBushes = () => [
+  bushModel({x: 76, y: 114, w: 30, h: 13, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 14, sun: 1}),
+  bushModel({x: 234, y: 115, w: 22, h: 10, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 15, sun: 1}),
+];
+// where birds land: the bench back (clear of whoever's sitting), the lamp, the path
+const PARK_PERCHES = [{x: 177, y: 104, w: 14}, {x: 188, y: 103}, {x: 215, y: 76}];
+const PARK_PATH_SPOTS = [{x: 228, y: 131, w: 20, ground: true}, {x: 262, y: 130.5, w: 24, ground: true}, {x: 104, y: 131.5, w: 24, ground: true}, {x: 60, y: 130.5, w: 20, ground: true}];
+// where flowers shouldn't grow: under the bench, at the lamp, around trunks and bushes
+const parkBusy = (x, y) => (x > 134 && x < 196 && y < 128) || (x > 206 && x < 222 && y > 118) || [30, 110, 252, 304].some(tx => Math.abs(x - tx) < 9 && y < 116)
+  || (Math.abs(x - 76) < 17 && y < 117) || (Math.abs(x - 234) < 13 && y < 118);
 
 // ---- people strolling through the park ----
 // They reuse the hoodie templates with their own colours; mapping the headphone
@@ -2191,11 +2802,44 @@ function parkFolk(k, t, dt){
   }
 }
 
+// ---- the garden's plants ----
+// the trees beyond the fence: only their crowns show over the pickets
+const gardenTrees = () => [[8, 62, 16, 11], [44, 60, 20, 13], [92, 63, 15, 10], [134, 59, 22, 13], [184, 62, 17, 11], [226, 60, 20, 12]]
+  .map(([x, y, rx, ry], i) => bushModel({x, y: y + ry, w: rx * 2, h: ry * 2, pal: PAL_MID, pal2: PAL_MID2, seed: 70 + i, sun: -1}));
+const PAL_MID  = ['#2e4a46','#3c5e52','#4c745e','#628a66','#80a670','#a4c48a'];
+const PAL_MID2 = ['#2a4446','#365650','#446a5a','#587e62','#74986a','#94b680'];
+// a climbing rose along the foot of the fence
+const gardenHedge = () => hedgeModel({x0: 118, x1: 222, y: 103, h: 15, pal: PAL_LEAF, pal2: PAL_LEAF2, seed: 61, sun: -1,
+  blooms: [['#ffd0dc', '#f07090', '#b83a5a'], ['#fff4f6', '#f4b8c8', '#c87890'], ['#ffb0a0', '#e85a4a', '#a83030']]});
+// tall flowers along the border in front of it
+function gardenBorder(){
+  const r = mulberry32(51), list = [], kinds = ['pink', 'poppy', 'daisy', 'butter', 'pink', 'peach'];
+  for (let x = 100; x < 222; x += 3 + r() * 3) list.push({x, y: 106.5 + r() * 2.5, kind: kinds[Math.floor(r() * kinds.length)], stem: 6 + Math.floor(r() * 9), big: r() < .6});
+  return list.sort((a, b) => a.y - b.y);
+}
+// a sunflower: pointed petals in two rings around a seed head that catches the light
+let SUNFLOWER = null;
+function sunflowerSprite(){
+  if (SUNFLOWER) return SUNFLOWER;
+  const n = 13, p = painter(n * 2 + 1, n * 2 + 1), c = n;
+  const pet = rgb('#f5c542'), petL = rgb('#ffe27a'), petD = rgb('#d89018'), seed = [rgb('#3a2010'), rgb('#5a2e12'), rgb('#8a5a2a')];
+  for (let y = -n; y <= n; y++) for (let x = -n; x <= n; x++){
+    const d = Math.hypot(x, y), th = Math.atan2(y, x), petals = 13;
+    const tip = 8.6 + 2.6 * Math.pow(Math.abs(Math.cos(th * petals / 2)), 3);
+    if (d <= 4.6){ const l = -(x + y) / 4.6 + (hash2(x, y, 3) - .5) * .6; p.put(c + x, c + y, seed[l > .5 ? 2 : l > -.4 ? 1 : 0]); }
+    else if (d <= tip) p.put(c + x, c + y, x + y < -4 ? petL : x + y > 5 ? petD : pet);
+  }
+  const cv = p.canvas(); cv.M = c; SUNFLOWER = cv; return cv;
+}
+// where birds land: the picket tops, the shed's roof, the watering can
+const GARDEN_PERCHES = [{x: 104.5, y: 73.5}, {x: 116.5, y: 73.5}, {x: 152.5, y: 73.5}, {x: 200.5, y: 73.5}, {x: 236.5, y: 73.5},
+  {x: 280, y: 36.5, w: 20}, {x: 166, y: 114}, {x: 60, y: 112, w: 30, ground: true}];
+
 // ---- bees and butterflies working the garden ----
 const GARDEN_SPOTS = [
   ...[20, 34, 48, 62, 76, 92].map(x => ({x, y: 69})),             // sunflower heads
-  ...[124, 140, 158, 176, 196, 214, 232].map(x => ({x, y: 89})),  // roses on the fence
-  ...[104, 118, 132, 170, 188, 206, 236].map(x => ({x, y: 101})), // the cottage border
+  ...[126, 142, 158, 174, 190, 206].map(x => ({x, y: 92})),       // the climbing rose
+  ...[104, 118, 132, 170, 188, 206].map(x => ({x, y: 101})),      // the cottage border
   ...[228, 234, 240].map(x => ({x, y: 97})),                      // lavender
 ];
 const spotNear = () => GARDEN_SPOTS[Math.floor(Math.random() * GARDEN_SPOTS.length)];
@@ -2231,6 +2875,9 @@ function gardenBugs(k, t, dt){
 const PLACE_BG = {};
 const pst = {};
 const placeBg = id => PLACE_BG[id] ||= (() => { const p = painter(); PLACES[id].bg(p); return p.canvas(); })();
+// things that stand in front of the swaying grass: trunks, paths, benches, posts
+const PLACE_FG = {};
+const placeFg = id => PLACE_FG[id] ||= (() => { const p = painter(); PLACES[id].front(p); return p.canvas(); })();
 const drifting = (key, n, make) => pst[key] ||= Array.from({length:n}, (_, i) => make(i));
 
 function spectrum(n, t){
@@ -2260,7 +2907,53 @@ function rainIn(k, dt, x, y, w, h, n, col, key){
     if (d.x >= x && d.x < x + w && d.y >= y) k.rect(d.x, d.y, .5, Math.max(.5, Math.min(3, y + h - d.y)), col);
   }
 }
-const outdoorRain = (k, dt, key) => { if (state.layers.rain.on) rainIn(k, dt, 0, 0, SW, SH, 110, 'rgba(170,185,240,.55)', key); };
+// the grey of a rainy sky: heaviest overhead, thinning toward the ground
+let RAIN_GLOOM = null;
+function rainGloom(){
+  const c = Object.assign(document.createElement('canvas'), {width: DW, height: DH}), g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, DH);
+  gr.addColorStop(0, 'rgba(58,64,86,.5)'); gr.addColorStop(.55, 'rgba(44,50,78,.22)'); gr.addColorStop(1, 'rgba(36,44,76,.12)');
+  g.fillStyle = gr; g.fillRect(0, 0, DW, DH);
+  return c;
+}
+// Rain outdoors: streaks slanting with the wind, a crown of spray where each drop hits the
+// ground and a ring where it hits water, and the light dims a little while it falls.
+// lands: bands [y0, y1, 'ground' | 'water' | 'none'] (logical y) where drops come down.
+function outdoorRain(k, dt, key, lands = [[110, 150, 'ground']]){
+  if (!state.layers.rain.on) return;
+  const g = k.g, st = pst['rain' + key] ||= {drops: [], hits: []};
+  g.drawImage(RAIN_GLOOM ||= rainGloom(), 0, 0);
+  const land = () => { const L = lands[Math.floor(Math.random() * lands.length)]; return {y: L[0] + Math.random() * (L[1] - L[0]), kind: L[2]}; };
+  while (st.drops.length < 120) st.drops.push({x: Math.random() * (SW + 40), y: Math.random() * SH, land: land()});
+  const slant = -22 - Math.abs(WIND(160, performance.now() / 1000)) * 14;
+  for (const d of st.drops){
+    d.y += 160 * dt; d.x += slant * dt;
+    if (d.x < -10) d.x += SW + 40;
+    if (d.y >= d.land.y){
+      if (d.land.kind !== 'none') st.hits.push({x: d.x, y: d.land.y, age: 0, water: d.land.kind === 'water'});
+      d.y = -4 - Math.random() * 20; d.x = Math.random() * (SW + 40); d.land = land();
+      continue;
+    }
+    // drops falling nearer to us (landing lower down) are longer and brighter
+    const near = d.land.y / SH, len = 2 + near * 2.5;
+    g.fillStyle = `rgba(180,195,240,${(.3 + near * .35).toFixed(2)})`;
+    g.fillRect(Math.round(d.x * HD), Math.round((d.y - len) * HD), 1, Math.round(len * HD));
+  }
+  for (const h of st.hits){
+    h.age += dt;
+    const X = Math.round(h.x * HD), Y = Math.round(h.y * HD);
+    if (h.water){
+      const r = 1 + h.age * 10, a = Math.max(0, .55 - h.age * 1.1);
+      g.fillStyle = `rgba(200,214,255,${a.toFixed(2)})`;
+      for (let i = 0; i < 12; i++){ const th = i / 12 * TAU; g.fillRect(Math.round(X + Math.cos(th) * r), Math.round(Y + Math.sin(th) * r * .35), 1, 1); }
+    } else {
+      const a = Math.max(0, .8 - h.age * 3.2), up = Math.round(Math.sin(Math.min(1, h.age * 4) * Math.PI) * 2);
+      g.fillStyle = `rgba(210,222,255,${a.toFixed(2)})`;
+      g.fillRect(X - 2, Y - up, 1, 1); g.fillRect(X + 2, Y - up, 1, 1);
+      if (h.age < .08) g.fillRect(X, Y - 1, 1, 1);
+    }
+  }
+  st.hits = st.hits.filter(h => h.age < (h.water ? .5 : .25));
+}
 function glowCone(k, cx, top, bottom, spread, a){
   const g = k.g, T = top * HD, B = bottom * HD, X = cx * HD;
   g.fillStyle = `rgba(255,207,107,${Math.min(1, a)})`;
@@ -2346,7 +3039,7 @@ function paintRidge(cw, fn, cols, seed, rim, depth, pines, moonlit){
   }
   if (pines){
     const r = mulberry32(seed + 1);
-    for (let x = 0; x < cw; x += 4 + Math.floor(r() * 7)) p.pine(x, fn(x) + 3, 8 + Math.floor(r() * 12), pines, x);
+    for (let x = 0; x < cw; x += 4 + Math.floor(r() * 7)) p.pine(x, fn(x) + 3, 8 + Math.floor(r() * 12), pines, x, {sun: 1});
   }
   return p.canvas();
 }
@@ -2506,8 +3199,8 @@ function paintKeep(){
   roundTower(274, 18, 56, 14, 110);
   squareTower(352, 24, 64, 113);
   roundTower(420, 20, 58, 18, 115);
-  p.canopy(34, 104, 5, 8, R_IVY, 117); p.canopy(300, 100, 6, 9, R_IVY, 118);
-  p.canopy(152, 108, 4, 8, R_IVY, 119); p.canopy(384, 106, 5, 7, R_IVY, 120);
+  p.leaves(34, 104, 5, 8, PAL_IVY, 117, 1); p.leaves(300, 100, 6, 9, PAL_IVY, 118, 1);
+  p.leaves(152, 108, 4, 8, PAL_IVY, 119, 1); p.leaves(384, 106, 5, 7, PAL_IVY, 120, 1);
   return p.canvas();
 }
 
@@ -2556,8 +3249,8 @@ function paintWall(){
   }
   // ivy spilling over the walkway
   for (const x of [28, 118, 214, 312]){
-    p.canopy(x, WALL_Y + 2.5, 6, 2, R_IVY, x);
     p.strands(x, WALL_Y + 3.5, 5.5, 13, R_IVY, x + 1);
+    p.leaves(x, WALL_Y + 2, 7, 2.6, PAL_IVY, x, 1);
   }
   return p.canvas();
 }
@@ -2639,7 +3332,7 @@ const PLACES = {
         }
       }
       wrapDraw(g, L.mist, sc * .3 + t * 2, 98);
-      outdoorRain(k, dt, 'castle');
+      outdoorRain(k, dt, 'castle', [[123, 126, 'ground'], [126, 150, 'none']]);
       const wo = wrapDraw(g, L.wall, sc);
       // the spectrum glows out of the wall like runes
       spectrum(52, t).forEach((v, i) => {
@@ -2730,7 +3423,8 @@ const PLACES = {
       p.box(44, 98, 16, 3, ['#1e2a4a','#3b5a8a','#6a8ac0']); p.box(45, 95, 14, 3, ['#4a1a24','#8a3b4a','#c06070']); p.box(46, 92, 12, 3, ['#6a5014','#c2a04a','#f0d070']);
       p.box(146, 98, 6, 6, ['#6a1424','#c2334d','#ec6a80']); p.rect(152, 99.5, 1, 3, '#a02840');
       p.box(180, 97, 7, 7, ['#5a2814','#a8603a','#d48a5c']);
-      p.canopy(183.5, 91, 6, 5, R_LEAF, 4);
+      p.rect(183, 93, .5, 4, '#2f6a40'); p.rect(184.5, 94, .5, 3, '#2f6a40');
+      p.leaves(183.5, 94, 5.5, 3.6, PAL_LEAF, 4, -1);
       // chair
       p.box(58, 112, 26, 3, ['#1e1428','#3b2a4a','#5a4470']);
       p.box(55, 87, 5, 28, ['#2a1d38','#4a3460','#6a5088']);
@@ -2772,43 +3466,52 @@ const PLACES = {
   },
 
   // ---- park bench below the observatory ----
+  // The sun sits high on the right, so everything is lit from the right and casts its
+  // shade to the left. Layers, back to front: sky and the far hill with its tree line;
+  // the lawn; the hill's grassy edge, swaying; trunks, path, bench and lamp; the crowns
+  // and bushes, swaying; flowers, birds, people; grass at the path's near edge; and dark
+  // leaves framing the bottom corners.
   park:{
     bg(p){
       p.sky(['#2e66b8','#4a86d4','#6aa6e6','#92c2ee','#bcdaf2','#e4ecee','#f6e6c6'], 0, 104);
       p.glow(272, 34, 46, '#fff4c8', .55); p.circle(272, 34, 10, '#fff6dc'); p.circle(271, 33, 8, '#fffdf2');
       p.cloud(80, 34, 96, 26, C_DAY, 11); p.cloud(196, 22, 64, 18, C_DAY, 12);
-      let obsY = 0;
-      const far = x => 86 - 8 * Math.sin(x * .012 + 1) - 3 * Math.sin(x * .05);
-      p.hill(far, ['#3e6a7c','#4c7a82','#5e8c88','#749e8e','#8eb498','#acc8a4'], 3, {rim:'#c8dcb0', depth:40});
-      obsY = far(70);
+      p.hill(PARK_FAR, ['#3e6a7c','#4c7a82','#5e8c88','#749e8e','#8eb498','#acc8a4'], 3, {rim:'#c8dcb0', depth:26, rough:.12});
+      const obsY = PARK_FAR(70);
       p.box(63, obsY - 6, 16, 7, ['#6a667e','#a6a2b8','#d8d4e2']);
       p.dome(71, obsY - 6, 7.5, ['#7a7690','#a8a4bc','#d0ccdc','#f2f0f8']);
       p.rect(70.5, obsY - 13, 1.5, 7, '#3a3a4e'); p.rect(71, obsY - 14, 4, .5, '#3a3a4e');
       p.rect(77, obsY - 16, .5, 6, '#3a3a4e'); p.rect(77.5, obsY - 16, 3, 2, '#d04050');
-      p.canopy(150, 90, 20, 6, ['#3a6a68','#4a7c70','#5e9078','#78a882','#98c090'], 21);
-      p.hill(x => 100 - 5 * Math.sin(x * .02 + 3) - 2 * Math.sin(x * .07), R_GRASS, 4, {blades:true, depth:24});
-      p.tree(110, 108, {h: 14, rx: 14, ry: 11, leaf: R_LEAF, seed: 7, w: 1.8});
-      p.tree(304, 112, {h: 17, rx: 18, ry: 14, leaf: R_LEAF, seed: 8, w: 2, lean: 2});
-      p.tree(30, 112, {h: 21, rx: 23, ry: 17, leaf: R_LEAF, seed: 6, w: 2.6, lean: 1, branches: 4});
-      p.tree(252, 112, {h: 25, rx: 28, ry: 18, leaf: R_BLOSS, seed: 5, w: 2.8, lean: -2, branches: 4});
-      const pr = mulberry32(77); // loose blossoms catching the light
-      for (let i = 0; i < 70; i++){ const a = pr() * Math.PI * 2, rr = Math.sqrt(pr()); p.dot(250 + Math.cos(a) * rr * 25, 75 + Math.sin(a) * rr * 14, pr() < .5 ? '#fff0f4' : '#ffd0dc'); }
-      p.ground(110, R_GRASS, 9, {flowers:['#ffffff','#f5c542','#ec8ac0'], count:18});
+      paintFarTrees(p, 92, 200, x => PARK_FAR(x) + 4, PAL_FAR, 21, 1);
+      paintFarTrees(p, 222, 326, x => PARK_FAR(x) + 4, PAL_FAR, 22, 1);
+      // the lawn, with each tree's shade falling to the left of its trunk
+      const trees = parkTrees();
+      p.lawn(PARK_NEAR, PAL_GRASS, 4, {light: (x, y) => {
+        let l = 0;
+        for (const m of trees){ const dx = (x - (m.s.x - m.s.rx * .35)) / (m.s.rx * 1.05), dy = (y - m.s.y - .5) / 3.4; if (dx * dx + dy * dy < 1) l -= .32; }
+        return l;
+      }});
+      // a sandy path, worn smooth down the middle, a darker lip where the far lawn meets it
       p.texture(0, 126, SW, 9, ['#9a7a50','#b49264','#ccac7c','#e0c492','#eed8aa'], 4, 10, .1);
-      p.rect(0, 126, SW, .5, '#7a6a40'); p.rect(0, 134.5, SW, .5, '#8a7046');
+      for (let X = 0; X < DW; X++) for (let Y = 129 * HD; Y < 132 * HD; Y++) if (hash2(X, Y, 3) < .3) p.put(X, Y, rgb('#e6cc9c'));
+      p.rect(0, 126, SW, .5, '#5e5a3a'); p.rect(0, 126.5, SW, .5, '#8a7650'); p.rect(0, 134.5, SW, .5, '#8a7046');
       const r = mulberry32(13);
-      for (let i = 0; i < 40; i++){ const x = r() * SW, y = 127 + r() * 7; p.rect(x, y, 1, .5, '#8a7a5a'); p.dot(x, y, '#f4e4c0'); }
-      for (let X = 0; X < DW; X++) if (hash2(X, 9, 9) < .45){ const bh = 1 + Math.floor(hash2(X, 8, 9) * 3); for (let j = 0; j < bh; j++) p.put(X, 126 * HD + j, rgb('#6caa44')); }
-      p.canopy(78, 112, 12, 5, R_LEAF, 14, {flat: .35}); p.canopy(226, 113, 10, 4, R_LEAF, 15, {flat: .35});
-      p.ellipse(165, 127, 30, 2, 'rgba(20,50,20,.4)');
+      for (let i = 0; i < 40; i++){ const x = r() * SW, y = 127.5 + r() * 6.5; p.rect(x, y, 1, .5, '#8a7a5a'); p.dot(x + .5, y, '#f4e4c0'); }
+    },
+    front(p){
+      for (const m of parkTrees()) paintTree(p, m);
+      for (const b of parkBushes()){ p.ellipse(b.s.x - 2, b.s.y + .2, b.s.w * .58, 1.8, 'rgba(26,44,36,.5)'); p.ellipse(b.s.x - 1, b.s.y, b.s.w * .4, 1, 'rgba(20,30,28,.5)'); }
+      p.ellipse(162, 127, 30, 2, 'rgba(30,40,30,.35)');
       p.box(142, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']); p.box(186, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']);
       p.wood(138, 114.5, 54, 2, R_WOODL, 16); p.wood(138, 116.5, 54, 1.5, R_WOOD, 17);
       p.wood(140, 104, 50, 2, R_WOODL, 18); p.wood(140, 108, 50, 2, R_WOODL, 19);
       p.box(141, 103, 2, 12, ['#0e0c16','#1c1a2a','#4a4860']); p.box(187, 103, 2, 12, ['#0e0c16','#1c1a2a','#4a4860']);
+      p.ellipse(213, 126.5, 5, 1, 'rgba(30,40,30,.4)');
       p.box(214, 80, 2, 46, ['#0e0c16','#1c1a2a','#4a4860']); p.box(210, 76, 10, 5, ['#0e0c16','#1c1a2a','#4a4860']);
       p.box(211.5, 77.5, 7, 2.5, ['#c8b070','#fff1b8','#fffbe8']); p.box(212, 124, 6, 2, ['#0e0c16','#1c1a2a','#4a4860']);
     },
     draw(g, t, dt, k){
+      const still = reduceMotion;
       k.img(placeBg('park'), 0, 0);
       driftClouds(k, dt, 'parkClouds', 3, 30, C_DAY);
       for (const b of drifting('parkBirds', 2, i => ({x: SW + i * 160, y: 20 + i * 14, p: i * 2}))){
@@ -2816,21 +3519,36 @@ const PLACES = {
         if (b.x < -10){ b.x = SW + 40 + Math.random() * 200; b.y = 14 + Math.random() * 30; }
         k.sprite(BAT[Math.floor(t * 6 + b.p) % 2], {k:'#3a3a52'}, b.x, b.y + Math.sin(t * 2 + b.p) * 3);
       }
+      drawTufts(k, pst.parkEdge ||= fringe(PARK_NEAR, -4, SW + 4, 9, {size: 5}), PAL_GRASS, t, still);
+      k.img(placeFg('park'), 0, 0);
+      for (const m of parkTrees()) drawClumps(k, m.clumps, t, still);
+      for (const b of parkBushes()) drawClumps(k, b.clumps, t, still);
+      drawFlowers(k, pst.parkFlowers ||= [
+        ...flowerPatches(4, 316, 106, 124, 9, ['daisy', 'peach', 'butter'], 31, {avoid: parkBusy}),
+        ...flowerPatches(4, 316, 138, 147, 7, ['daisy', 'peach', 'pink', 'blue'], 32, {avoid: (x, y) => y > 140 && (x < 30 || x > 290)}),
+      ], t, still);
       for (const l of drifting('petals', 12, i => ({x: [252, 30][i % 2] + Math.random() * 30 - 15, y: 60 + Math.random() * 50, p: Math.random() * 6, pink: i % 2 === 0}))){
         l.y += 6 * dt; l.x += (Math.sin(t * 2 + l.p) * 8 - 3) * dt;
         if (l.y > 126){ l.pink = Math.random() < .6; const home = l.pink ? 252 : 30; l.x = home + Math.random() * 30 - 15; l.y = 62; }
         k.rect(l.x, l.y, 1, .5, l.pink ? '#ffd0dc' : '#e8a04a');
       }
-      const cols = ['#e0524a','#f5c542','#ec8ac0','#ffffff'];
+      // flowers along the front grow with the music
+      const kinds = ['poppy', 'butter', 'pink', 'daisy'];
       spectrum(30, t).forEach((v, i) => {
-        const x = 6 + i * 10, h = 3 + Math.round(v * 18) / 2;
-        k.rect(x + 1, 149 - h, .5, h, '#3f7a3a'); k.rect(x + 1.5, 149 - h / 2, 1, .5, '#5ab04a');
-        k.rect(x, 149 - h - 3, 2.5, 3, cols[i % 4]); k.rect(x + .5, 149 - h - 3, 1, 1, '#ffffff');
+        const x = 6 + i * 10, h = 3 + Math.round(v * 18) / 2, sway = still ? 0 : Math.round(WIND(x, t) * 1.2) / HD;
+        k.rect(x + 1, 149 - h, .5, h, '#2f6a40'); k.rect(x + 1.5, 149 - h / 2, 1, .5, '#4a9a52'); k.rect(x + .5, 149 - h * .7, .5, .5, '#4a9a52');
+        const hd = flowerHeadSprite(kinds[i % 4], 3.6);
+        g.drawImage(hd, Math.round((x + 1.25 + sway) * HD) - hd.M, Math.round((149 - h - 1.5) * HD) - hd.M);
       });
-      [228, 246].forEach((x, i) => k.sprite(PIGEON[scene.beat > .5 && i === scene.step % 2 ? 1 : 0], {g:'#8a8aa0', k:'#e04040', r:'#d0702a'}, x, 127));
+      // songbirds drop in on the bench back and the lamp; pigeons work the path until someone comes by
+      birdLife(k, t, dt, 'parkSong', 2, PARK_PERCHES, ['robin', 'sparrow', 'blue']);
+      birdLife(k, t, dt, 'parkPigeons', 3, PARK_PATH_SPOTS, ['pigeon'], {speed: 45, scare: (x, y) => (pst.parkFolk || []).some(w =>
+        Math.abs((w.kind === 'dog' ? w.x + (w.dir > 0 ? 24 : -12) : w.x + 4) - x) < (w.kind === 'jogger' ? 26 : 18))});
       sitHero(k, 152, 115);
       parkFolk(k, t, dt);
-      outdoorRain(k, dt, 'park');
+      drawTufts(k, pst.parkPath ||= fringe(() => 135, -4, SW + 4, 19, {size: 7, depth: .5}), PAL_GRASS, t, still);
+      drawFronds(k, t, still);
+      outdoorRain(k, dt, 'park', [[100, 150, 'ground']]);
     },
   },
 
@@ -2849,7 +3567,7 @@ const PLACES = {
       p.rect(78, ky - 16, 1, 1.5, '#ffcf6b'); p.glow(78.5, ky - 15, 5, '#ffb050', .4);
       p.hill(x => 76 - 5 * Math.sin(x * .03) - 3 * Math.sin(x * .11 + 1), ['#080c28','#0c1230','#10183a'], 14, {rim:'#22306a', depth:10});
       const r = mulberry32(5);
-      for (let x = 2; x < SW; x += 3 + Math.floor(r() * 4)) p.pine(x, 84, 6 + Math.floor(r() * 10), ['#04071a','#080c24','#0e1430'], x);
+      for (let x = 2; x < SW; x += 3 + Math.floor(r() * 4)) p.pine(x, 84, 6 + Math.floor(r() * 10), ['#04071a','#080c24','#0e1430','#16204a'], x, {sun: 1});
       p.sky(['#1a2658','#121c48','#0c1438','#080e2a','#050a20'], 84, 150);
       p.reflect(84, 44, '#0a1232', .6);
       for (let i = 0; i < 70; i++){ const x = r() * SW, y = 88 + r() * 60; p.rect(x, y, 2 + r() * 6, .5, 'rgba(140,160,240,.18)'); }
@@ -2865,7 +3583,9 @@ const PLACES = {
       p.vignette(.5);
     },
     draw(g, t, dt, k){
+      const still = reduceMotion;
       k.img(placeBg('lake'), 0, 0);
+      fishJumps(k, t, dt, 'lakeFish', 214, 300, 96, 124);
       for (const s of drifting('lakeTw', 14, () => ({x: Math.random() * SW, y: Math.random() * 64, p: Math.random() * 6}))){
         if (Math.sin(t * 2 + s.p) > .8){ k.dot(s.x, s.y, '#ffffff'); k.glow(s.x, s.y, 2, '#dfe6ff', .5); }
       }
@@ -2883,13 +3603,9 @@ const PLACES = {
         const on = Math.sin(t * 2 + f.p);
         if (on > .2){ k.glow(f.x, f.y, 4, '#d8ff7a', on * .7); k.rect(f.x, f.y, .5, .5, '#f4ffc8'); }
       }
-      for (let i = 0; i < 9; i++){
-        const x = 282 + i * 4, h = 18 + (i * 7) % 12, sway = Math.sin(t * 1.5 + i) * 2;
-        for (let j = 0; j < h; j += .5) k.rect(x + sway * (j / h), 150 - j, .5, .5, j > h * .7 ? '#16282c' : '#0c181c');
-        if (i % 2 === 0) k.rect(x - .5 + sway, 150 - h - 4, 1.5, 4, '#5a3a24');
-      }
+      drawReeds(k, pst.lakeReeds ||= reedBed(264, 326, 140, 9), t, still);
       sitHero(k, 182, 109);
-      outdoorRain(k, dt, 'lake');
+      outdoorRain(k, dt, 'lake', [[86, 108, 'water'], [114, 150, 'water']]);
     },
   },
 
@@ -2920,7 +3636,7 @@ const PLACES = {
       p.wood(9, 15, 126, 3, ['#120a06','#24140c','#3a2214','#563420'], 4); p.wood(9, 96, 126, 4, R_WOOD, 5);
       p.wood(9, 15, 3, 85, ['#120a06','#24140c','#3a2214','#563420'], 6, true); p.wood(132, 15, 3, 85, ['#120a06','#24140c','#3a2214','#563420'], 7, true);
       p.wood(71, 18, 2, 78, ['#120a06','#24140c','#3a2214','#563420'], 8, true);
-      p.box(28, 19, 8, 6, ['#5a2814','#a8603a','#d48a5c']); p.strands(32, 25, 5, 22, R_LEAF, 3);
+      p.box(28, 19, 8, 6, ['#5a2814','#a8603a','#d48a5c']); p.strands(32, 25, 5, 22, R_LEAF, 3); p.leaves(32, 19.5, 6, 2.5, PAL_LEAF, 5, 1);
       p.wood(160, 26, 60, 40, R_WOOD, 9); p.texture(163, 29, 54, 34, ['#121a18','#16201c','#1a2622','#1e2a26'], 5, 10);
       p.rect(166, 32, 22, .5, '#e8e8e0'); p.rect(166, 35.5, 32, .5, 'rgba(232,232,224,.6)'); p.rect(166, 38.5, 26, .5, 'rgba(232,232,224,.6)');
       p.box(204, 32, 7, 6, ['#a8a8a0','#d8d8d0','#ffffff']);
@@ -2982,65 +3698,74 @@ const PLACES = {
 
   // ---- morning in the garden ----
   garden:{
+    // The sun is up on the left, so the garden is lit from the left. Back to front: sky;
+    // the trees beyond the fence, swaying; the fence, shed and lawn; the rose hedge,
+    // lavender and the cottage border, all swaying; sunflowers, the vegetable beds,
+    // birds and bugs; dark leaves in the corners.
     bg(p){
       p.sky(['#5aa0dc','#78b6e6','#9ccaee','#bedcf0','#dceaee','#f4eed6'], 0, 84);
       p.glow(40, 26, 40, '#fff6d0', .6); p.circle(40, 26, 9, '#fff8e0'); p.circle(39, 25, 7, '#fffef6');
       p.cloud(140, 24, 74, 18, C_DAY, 21); p.cloud(236, 36, 48, 13, C_DAY, 22);
-      const r = mulberry32(12);
-      for (let x = -6; x < SW + 10; x += 16 + Math.floor(r() * 10)) p.canopy(x, 72, 12 + r() * 6, 8 + r() * 3, ['#4e7c78','#5e8c80','#729e88','#8ab294','#a6c6a2'], x + 40);
+      paintFarTrees(p, -6, SW + 6, 70, PAL_FAR, 12, -1);
+    },
+    front(p){
       for (let x = 0; x < SW; x += 6){
         p.wood(x, 76, 5, 32, ['#7a5a3a','#9a7650','#b89268','#d4ae80','#ead0a4'], x, true);
         p.rect(x + .5, 74.5, 4, 1.5, '#d4ae80'); p.rect(x + 1.5, 73.5, 2, 1, '#ead0a4');
+        p.rect(x + 4, 76, 1, 32, 'rgba(60,40,30,.35)');
       }
       p.wood(0, 82, SW, 2, ['#5a3e26','#7a5a3a','#9a7650'], 23); p.wood(0, 98, SW, 2, ['#5a3e26','#7a5a3a','#9a7650'], 24);
-      // a climbing rose along the fence: one hedge with blooms scattered through it
-      p.canopy(178, 91, 60, 7, R_LEAF, 61, {flat: .55, lightX: .12});
-      for (let i = 0; i < 46; i++){ const x = 122 + r() * 112, y = 86 + r() * 10; p.circle(x, y, 1, r() < .5 ? '#e86a8a' : '#f4a0b8'); p.dot(x - .5, y - .5, '#ffd8e4'); }
       p.wood(252, 52, 56, 56, ['#4a2418','#6a3424','#8a4e3a','#a86a4e','#c48864'], 25, true);
       for (let x = 256; x < 308; x += 6) p.rect(x, 52, .5, 56, '#3a1c12');
       for (let i = 0; i < 16; i++){
         const y = 52 - i, w = 66 - 2 * i;
         for (let x = 0; x < w; x += 4) p.box(247 + i + x, y, 4, 1, ['#2a1414','#4a2a2a','#6a3a3a']);
       }
+      p.rect(247, 52, 66, 1, 'rgba(30,10,10,.5)');
       p.wood(269, 75, 16, 33, ['#3a1c12','#5a2e20','#7a4430'], 26, true); p.box(281, 91, 1.5, 1.5, ['#7a5a1a','#c2a04a','#f0d070']);
       p.box(291, 63, 12, 12, ['#3a1c12','#5a2e20','#7a4430']); p.sky(['#9ccaee','#cfe6f2'], 64, 74, 292, 10);
       p.rect(296.5, 64, 1, 10, '#5a2e20'); p.rect(292, 68.5, 10, 1, '#5a2e20');
-      p.wood(290, 75, 14, 3, R_WOODL, 27); [292, 296, 300].forEach(x => p.circle(x, 74, 1.5, '#ec5a7a'));
-      p.ground(106, R_GRASS, 31, {flowers:['#ffffff','#f5c542','#c890f0','#ec6a9a'], count:30});
-      // a cottage border along the bottom of the fence: tulips, daisies and cosmos
-      const fr = mulberry32(51);
-      for (let x = 100; x < 248; x += 3 + fr() * 3){
-        const kind = fr(), stem = 3 + fr() * 4, y = 108 + fr() * 2;
-        p.rect(x, y - stem, .5, stem, '#3f7a3a');
-        if (fr() < .5) p.rect(x - 1, y - stem * .5, 1, .5, '#5a9a42');
-        if (kind < .35){ p.rect(x - .5, y - stem - 2, 1.5, 2, ['#e0402a','#f5c542','#ec6a9a','#f08a3a'][Math.floor(fr() * 4)]); p.dot(x - .5, y - stem - 2, '#ffffff'); }
-        else if (kind < .7){ p.rect(x - 1, y - stem - .5, 2.5, .5, '#f6f2ea'); p.rect(x - .25, y - stem - 1.5, .5, 2.5, '#f6f2ea'); p.dot(x, y - stem - .5, '#f5c542'); }
-        else { p.circle(x, y - stem - 1, 1, ['#c890f0','#ec8ac0','#ffffff'][Math.floor(fr() * 3)]); p.dot(x, y - stem - 1, '#f5c542'); }
+      p.wood(290, 75, 14, 3, R_WOODL, 27);
+      // the lawn, a little shaded along the foot of the fence
+      p.lawn(() => 106, PAL_GRASS, 31, {light: (x, y) => (y < 110 ? -.22 : 0) + (x > 250 && y < 116 ? -.12 : 0), tall: 9});
+      for (const [x, y] of [[196,142],[214,134],[232,128]]){
+        p.ellipse(x + .5, y + .8, 5.5, 2.2, 'rgba(30,40,30,.45)');
+        p.ellipse(x, y, 5, 2, '#8a8298'); p.ellipse(x - .5, y - .4, 4.2, 1.5, '#a8a0b8'); p.ellipse(x - 1.2, y - .8, 2.4, .8, '#c4bed0');
       }
-      for (let i = 0; i < 18; i++){
-        const x = 224 + i + Math.sin(i * 2.3) * 1.5, top = 96 + (i % 4) * 1.5;
-        p.rect(x, top + 4, .5, 108 - top - 4, '#4a7a3a');
-        for (let y = top; y < top + 5; y += .5) p.dot(x + (y * 2 % 1 ? .5 : 0), y, y < top + 1.5 ? '#b8a8f0' : '#7a64c8');
-      }
-      for (const [x, y] of [[196,142],[214,134],[232,128]]) p.ellipse(x, y, 5, 2, '#a8a0b8');
-      p.wood(10, 121, 100, 13, R_WOOD, 34); p.texture(12, 123, 96, 4, R_DIRT, 2, 35);
-      p.wood(196, 135, 116, 13, R_WOOD, 36); p.texture(198, 137, 112, 4, R_DIRT, 2, 37);
+      p.wood(10, 121, 100, 13, R_WOOD, 34); p.soil(12, 122.5, 96, 4.5, 35);
+      p.wood(196, 135, 116, 13, R_WOOD, 36); p.soil(198, 136.5, 112, 4.5, 37);
       p.ellipse(147, 124.5, 11, 1.5, 'rgba(20,50,20,.4)');
       p.wood(138, 111.5, 18, 12.5, R_WOODL, 38); p.rect(138, 115.5, 18, .5, '#5a3824'); p.rect(138, 119.5, 18, .5, '#5a3824');
+      p.ellipse(168, 123.5, 8, 1.2, 'rgba(20,50,20,.4)');
       p.box(162, 116, 9, 7, ['#24506a','#4a8ab0','#8cc0dc']); p.box(163, 114, 7, 2, ['#24506a','#3a7aa0','#6aa8cc']);
       for (let i = 0; i < 10; i++) p.dot(171 + i * .5, 117.5 - i * .5, '#4a8ab0');
       p.rect(175.5, 112.5, 1.5, 1, '#8cc0dc');
     },
     draw(g, t, dt, k){
+      const still = reduceMotion;
       k.img(placeBg('garden'), 0, 0);
       driftClouds(k, dt, 'gardenClouds', 2, 22, C_DAY);
+      for (const m of gardenTrees()) drawClumps(k, m.clumps, t, still);
+      k.img(placeFg('garden'), 0, 0);
+      // flowers in the window box
+      for (const [i, x] of [292, 296, 300].entries()){ const hd = flowerHeadSprite(['pink', 'poppy', 'pink'][i], 2.8); g.drawImage(hd, Math.round(x * HD) - hd.M, Math.round(74 * HD) - hd.M); }
+      drawClumps(k, gardenHedge().clumps, t, still);
+      // lavender stalks nodding in the breeze
+      for (let i = 0; i < 18; i++){
+        const x = 224 + i + Math.sin(i * 2.3) * 1.5, top = 96 + (i % 4) * 1.5, lean = still ? 0 : WIND(x, t) * .8;
+        for (let y = top + 4; y < 108; y += .5) k.rect(x + lean * (108 - y) / 14, y, .5, .5, '#4a7a3a');
+        for (let y = top; y < top + 5; y += .5) k.dot(x + lean * (108 - y) / 14 + (y * 2 % 1 ? .5 : 0), y, y < top + 1.5 ? '#c4b4f8' : '#7a64c8');
+      }
+      drawFlowers(k, pst.gardenBorder ||= gardenBorder(), t, still);
+      drawTufts(k, pst.gardenEdge ||= fringe(() => 106.5, -4, SW + 4, 41, {size: 6}), PAL_GRASS, t, still);
+      drawFlowers(k, pst.gardenLawn ||= flowerPatches(4, 316, 112, 146, 8, ['daisy', 'blue', 'butter'], 42,
+        {avoid: (x, y) => (x > 6 && x < 114 && y < 136) || (x > 192 && y > 124) || (x > 132 && x < 180 && y < 126)}), t, still);
       [20, 34, 48, 62, 76, 92].forEach((x, i) => {
-        const sway = Math.sin(t * 1.2 + i) * 1.5 + (scene.beat > .5 ? (i % 2 ? 1 : -1) : 0);
-        for (let j = 0; j < 34; j += .5) k.rect(x + sway * j / 34, 106 - j, 1, .5, j % 4 < 2 ? '#3f7a2e' : '#4f8a3a');
-        k.rect(x - 3 + sway * .3, 95, 3, 1.5, '#5a9a42'); k.rect(x + 1 + sway * .5, 88, 3, 1.5, '#6aaa4a');
-        const hx = x + sway, hy = 70;
-        k.circle(hx, hy, 4.5, '#d89018'); k.circle(hx - .5, hy - .5, 4, '#f5c542');
-        k.circle(hx, hy, 2, '#5a2e12'); k.rect(hx - 1, hy - 1, 1, 1, '#8a5a2a');
+        const sway = (still ? 0 : WIND(x, t) * 1.6) + (scene.beat > .5 ? (i % 2 ? 1 : -1) : 0);
+        for (let j = 0; j < 34; j += .5) k.rect(x + sway * j / 34, 106 - j, 1, .5, j % 4 < 2 ? '#2f6a40' : '#3f7a48');
+        k.rect(x - 3 + sway * .3, 95, 3, 1.5, '#4a9a52'); k.rect(x + 1 + sway * .5, 88, 3, 1.5, '#5aaa5a');
+        const hd = sunflowerSprite(), hx = x + sway, hy = 70;
+        g.drawImage(hd, Math.round(hx * HD) - hd.M, Math.round(hy * HD) - hd.M);
       });
       const sp = spectrum(22, t);
       sp.slice(0, 12).forEach((v, i) => {
@@ -3048,10 +3773,12 @@ const PLACES = {
         k.rect(x, 123 - h, .5, h, '#3f8a3a'); k.rect(x - 1, 123 - h / 2, 1, .5, '#5ab04a'); k.rect(x + .5, 123 - h / 3, 1, .5, '#6ac05a');
         if (i % 3 === 0){ k.rect(x - .5, 123 - h - 1.5, 1.5, 1.5, '#e0402a'); k.dot(x - .5, 123 - h - 1.5, '#ff9a80'); }
       });
-      sp.slice(12).forEach((v, i) => { const r = 2 + v * 3; k.circle(206 + i * 11, 138, r, '#4a9a3a'); k.circle(205.5 + i * 11, 137.5, r * .6, '#7ac85a'); });
+      sp.slice(12).forEach((v, i) => { const r = 2 + v * 3; k.circle(206 + i * 11, 138, r, '#3f8a4a'); k.circle(205.5 + i * 11, 137.5, r * .6, '#76c05a'); k.dot(205 + i * 11, 137, '#a6e272'); });
       sitHero(k, 140, 111.5);
+      birdLife(k, t, dt, 'gardenBirds', 3, GARDEN_PERCHES, ['robin', 'blue', 'sparrow']);
       gardenBugs(k, t, dt);
-      outdoorRain(k, dt, 'garden');
+      drawFronds(k, t, still, PAL_FROND_GREEN, [5, 11]);
+      outdoorRain(k, dt, 'garden', [[106, 150, 'ground']]);
     },
   },
 
@@ -3063,10 +3790,10 @@ const PLACES = {
       p.cloud(170, 34, 130, 12, C_NIGHT, 5);
       p.glow(60, 22, 24, '#b8c8ff', .45); p.moon(60, 22, 6);
       const r = mulberry32(31);
-      for (let x = -4; x < SW + 6; x += 5 + Math.floor(r() * 6)) p.pine(x, 100, 18 + Math.floor(r() * 20), ['#0c1632','#122040','#1a2a4c'], x);
+      for (let x = -4; x < SW + 6; x += 5 + Math.floor(r() * 6)) p.pine(x, 100, 18 + Math.floor(r() * 20), ['#0a1430','#0e1a3a','#142244','#1c2c52','#2a3c66'], x);
       for (let Y = 92 * HD; Y < 104 * HD; Y++) for (let X = 0; X < DW; X++) if (bay(X, Y) < -.2) p.put(X, Y, [70, 90, 150, .12]);
-      for (let x = 0; x < SW + 8; x += 13 + Math.floor(r() * 8)) p.pine(x, 114, 30 + Math.floor(r() * 26), ['#050a16','#08101e','#0c1628','#122034'], x + 99);
-      p.ground(112, ['#070d0a','#0a120e','#0e1812','#122016','#16281a','#1c3220'], 32);
+      for (let x = 0; x < SW + 8; x += 13 + Math.floor(r() * 8)) p.pine(x, 114, 30 + Math.floor(r() * 26), ['#040814','#070e1c','#0b1426','#111e34','#1c2c4a'], x + 99);
+      p.lawn(() => 112, PAL_GRASS_NIGHT, 32, {base: .45, swell: .2, light: (x, y) => Math.max(0, 1 - Math.hypot(x - 208, (y - 124) * 2.2) / 70) * .7});
       p.glow(208, 124, 70, '#ff9040', .35, 18);
       p.texture(166, 120, 84, 12, ['#140e0a','#1e160e','#2a1e14','#3a2a1a'], 3, 33);
       const tent = rgb('#000');
@@ -3112,7 +3839,11 @@ const PLACES = {
       k.sprite(OWL, {k:'#2a1a10', b:'#5a3a24', f:'#c8a070', E: blink ? '#5a3a24' : '#f5c542', y:'#c8a040'}, 280, 69);
       k.rect(276, 77, 12, 1, '#050a10');
       sitHero(k, 152, 118);
-      outdoorRain(k, dt, 'forest');
+      const still = reduceMotion;
+      fireflies(k, t, dt, 'forestFlies', 9, 30, 290, 96, 140);
+      drawTufts(k, pst.forestGrass ||= fringe(() => 149, -4, SW + 4, 77, {size: 10, lv: 1, depth: 2}), PAL_GRASS_NIGHT, t, still);
+      drawFronds(k, t, still, PAL_FROND_NIGHT, [13, 17]);
+      outdoorRain(k, dt, 'forest', [[112, 150, 'ground']]);
     },
   },
 
@@ -3139,8 +3870,8 @@ const PLACES = {
       for (let i = 0; i < 160; i++) p.dot(r() * SW, 118 + r() * 32, r() < .5 ? '#f6dcae' : '#b8906a');
       p.texture(0, 112, SW, 6, ['#6a4a48','#7e5a52','#94705e','#a8846a'], 4, 46);
       for (let i = 0; i < 6; i++){ const x = r() * SW, y = 122 + r() * 24; p.ellipse(x, y, 14 + r() * 10, 2, 'rgba(160,110,80,.18)'); }
-      for (let X = 280 * HD; X < DW; X++) if (hash2(X, 7, 7) < .5){ const bh = 2 + Math.floor(hash2(X, 6, 7) * 10); for (let j = 0; j < bh; j++) p.put(X + Math.round(j * .2), 126 * HD - j, rgb(j > bh - 3 ? '#c8c070' : '#8a8a4a')); }
-      p.canopy(296, 128, 8, 3, ['#3a3a4a','#5a5868','#7a788a','#9a98aa'], 47);
+      // a low dune at the right, its grass drawn swaying on top
+      for (let X = 262 * HD; X < DW; X++){ const top = Math.round((128 - 7 * Math.sin(Math.min(1, (X / HD - 262) / 50) * Math.PI / 2)) * HD); for (let Y = top; Y < 132 * HD; Y++) p.put(X, Y, rgb(Y - top < 2 ? '#f2d6a4' : bay(X, Y) + (Y - top) / 14 > .6 ? '#d2aa78' : '#e4c08a')); }
     },
     draw(g, t, dt, k){
       k.img(placeBg('beach'), 0, 0);
@@ -3176,8 +3907,12 @@ const PLACES = {
         if (b.x < -10){ b.x = SW + Math.random() * 120; b.y = 16 + Math.random() * 34; }
         k.sprite(BAT[Math.floor(t * 5 + b.p) % 2], {k:'#f4eef8'}, b.x, b.y + Math.sin(t * 2 + b.p) * 3);
       }
+      const still = reduceMotion;
+      birdLife(k, t, dt, 'pierGulls', 2, [{x: 46, y: 65, w: 36}, {x: 14, y: 56, w: 8}], ['gull'], {speed: 40});
+      drawTufts(k, pst.dune ||= fringe(x => 128 - 7 * Math.sin(Math.min(1, Math.max(0, (x - 262) / 50)) * Math.PI / 2) + 1, 266, SW + 4, 47, {size: 16, lv: 1, dense: 1.2}), PAL_DUNE, t, still);
+      drawFronds(k, t, still, PAL_FROND_DUSK, [21, 23]);
       walkHero(k, 140, 138);
-      outdoorRain(k, dt, 'beach');
+      outdoorRain(k, dt, 'beach', [[78, 112, 'water'], [112, 150, 'ground']]);
     },
   },
 };
