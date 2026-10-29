@@ -1239,11 +1239,10 @@ function syncUI(){
   updateNowPlaying();
 }
 
-// ---------- pixel castle scene ----------
-// Everything is drawn at 320×150 and scaled up with pixelated rendering.
+// ---------- scene state + sprites ----------
+// Scenes are laid out on a 320×150 grid and painted at 2× by the toolkit below.
 const SW = 320, SH = 150, WALL_Y = 124;
-const scene = {heroX:46, heroY:WALL_Y - 14, beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, bats:[], notes:[], drops:[]};
-const SKY = ['#0a0620','#110a2e','#1a0f3c','#241449','#2f1955','#3c1e5e','#4b2366'];
+const scene = {heroX:46, heroY:WALL_Y - 14, beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, notes:[]};
 
 const HERO_TOP = [
   '...kkkk...',
@@ -1269,201 +1268,15 @@ const BAT = [
 ];
 const NOTE = ['..kk', '..kk', '..k.', 'kkk.', 'kk..'];
 
-function offscreen(w, h, paint){
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d'); paint(x); return c;
-}
-
-const skyCanvas = offscreen(SW, SH, x => {
-  const band = Math.ceil(WALL_Y / SKY.length);
-  SKY.forEach((col, i) => { x.fillStyle = col; x.fillRect(0, i * band, SW, band); });
-  // dithered seams between bands
-  for (let i = 1; i < SKY.length; i++){
-    x.fillStyle = SKY[i];
-    for (let px = 0; px < SW; px += 2) x.fillRect(px + (i % 2), i * band - 1, 1, 1);
-    x.fillStyle = SKY[i - 1];
-    for (let px = 0; px < SW; px += 2) x.fillRect(px + ((i + 1) % 2), i * band, 1, 1);
-  }
-});
-
-const moonCanvas = offscreen(44, 44, x => {
-  for (let y = 0; y < 44; y++) for (let px = 0; px < 44; px++){
-    const d = Math.hypot(px - 22, y - 22);
-    if (d < 11){ x.fillStyle = '#efe6c8'; x.fillRect(px, y, 1, 1); }
-    else if (d < 18 && (px + y) % 2 === 0){ x.fillStyle = d < 14 ? 'rgba(239,230,200,.35)' : 'rgba(239,230,200,.12)'; x.fillRect(px, y, 1, 1); }
-  }
-  x.fillStyle = '#cfc3a0';
-  [[17,18,3],[25,24,2],[21,27,2],[26,16,1]].forEach(([cx, cy, r]) => x.fillRect(cx, cy, r, r));
-});
-
-const castleWindows = [];
-const castleCanvas = offscreen(480, 100, x => {
-  const r = mulberry32(7);
-  const stoneCol = '#1b1340', lit = '#2b2063';
-  const block = (px, w, h, spire) => {
-    const top = 100 - h;
-    x.fillStyle = stoneCol; x.fillRect(px, top, w, h);
-    x.fillStyle = lit; x.fillRect(px, top, 1, h);
-    x.fillStyle = stoneCol;
-    if (spire){
-      for (let k = 0; k < spire; k++){
-        const ww = Math.max(1, Math.round(w * (1 - k / spire)));
-        x.fillRect(px + Math.floor((w - ww) / 2), top - k - 1, ww, 1);
-      }
-      x.fillStyle = '#c2334d'; x.fillRect(px + Math.floor(w / 2), top - spire - 4, 3, 2);
-      x.fillStyle = stoneCol; x.fillRect(px + Math.floor(w / 2), top - spire - 4, 1, 4);
-    } else {
-      for (let i = 0; i < w; i += 4) x.fillRect(px + i, top - 3, 2, 3);
-    }
-    for (let wy = top + 6; wy < 92; wy += 10)
-      for (let wx = px + 3; wx < px + w - 4; wx += 7)
-        if (r() < .45) castleWindows.push({x: wx, y: wy, seed: r()});
-  };
-  [[8,18,52,14],[26,40,32,0],[66,22,70,20],[88,58,28,0],[146,16,56,12],[162,34,40,0],
-   [196,26,82,24],[222,52,26,0],[274,18,48,10],[292,62,34,0],[354,24,64,18],[378,48,30,0],[426,20,44,12],[446,34,24,0]]
-    .forEach(([px, w, h, sp]) => block(px, w, h, sp));
-});
-
-const stars = Array.from({length:70}, (_, i) => {
-  const r = mulberry32(i * 31 + 3);
-  return {x: Math.floor(r() * SW), y: Math.floor(r() * 90), p: r() * 6.28, s: .6 + r() * 2};
-});
-
-function sprite(g, rows, colors, x, y){
-  for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++){
-    const col = colors[rows[j][i]]; if (!col) continue;
-    g.fillStyle = col; g.fillRect(Math.round(x) + i, Math.round(y) + j, 1, 1);
-  }
-}
-
-function ridge(g, color, base, amp, freq, offset, parallax){
-  g.fillStyle = color;
-  const sx = scene.scroll * parallax;
-  for (let x = 0; x < SW; x++){
-    const wx = x + sx;
-    const h = Math.round(amp * (Math.sin(wx * freq + offset) * .6 + Math.sin(wx * freq * 2.7 + offset * 2) * .4));
-    g.fillRect(x, base - h, 1, SH - base + h);
-  }
-}
-
-function dither(g, cx, cy, r, color){
-  g.fillStyle = color;
-  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++)
-    if ((x + y) % 2 === 0 && x * x + y * y < r * r) g.fillRect(cx + x, cy + y, 1, 1);
-}
-
-function drawCastle(g, t, dt, beat){
-  g.drawImage(skyCanvas, 0, 0);
-
-  for (const s of stars){
-    const tw = Math.sin(t * s.s + s.p);
-    if (tw < -.3) continue;
-    g.fillStyle = tw > .85 ? '#ffffff' : '#a99be0';
-    g.fillRect(s.x, s.y, 1, 1);
-    if (tw > .95){ g.fillStyle = 'rgba(255,255,255,.45)'; g.fillRect(s.x - 1, s.y, 3, 1); g.fillRect(s.x, s.y - 1, 1, 3); }
-  }
-
-  g.drawImage(moonCanvas, 242, 6 - Math.round(beat));
-
-  // bats
-  if (Math.random() < .003 && scene.bats.length < 3) scene.bats.push({x: SW + 8, y: 18 + Math.random() * 40, v: 18 + Math.random() * 14, p: Math.random() * 6});
-  for (const b of scene.bats){
-    b.x -= b.v * dt;
-    sprite(g, BAT[Math.floor(t * 7 + b.p) % 2], {k:'#07040f'}, b.x, b.y + Math.sin(t * 3 + b.p) * 4);
-  }
-  scene.bats = scene.bats.filter(b => b.x > -10);
-
-  ridge(g, '#1e1547', 92, 12, .018, 1, .12);
-  ridge(g, '#170f38', 104, 8, .031, 4, .25);
-
-  // castle, wrapping
-  const cx = -((scene.scroll * .45) % 480);
-  for (const off of [cx, cx + 480]){
-    g.drawImage(castleCanvas, Math.round(off), 18);
-    for (const w of castleWindows){
-      const wx = Math.round(off + w.x);
-      if (wx < -3 || wx > SW) continue;
-      const on = Math.sin(t * .7 + w.seed * 40) > -.4;
-      if (!on) continue;
-      g.fillStyle = w.seed > .5 + beat * .3 ? '#e8692c' : '#ffcf6b';
-      g.fillRect(wx, 18 + w.y, 2, 3);
-    }
-  }
-
-  // low mist
-  g.fillStyle = 'rgba(90,70,160,.18)';
-  for (let x = 0; x < SW; x += 2) g.fillRect(x + (Math.floor(t * 4) % 2), 116 + Math.round(Math.sin(x * .05 + t) * 2), 1, 1);
-
-  // rain
-  if (state.layers.rain.on){
-    while (scene.drops.length < 90) scene.drops.push({x: Math.random() * (SW + 40), y: Math.random() * SH});
-    g.fillStyle = 'rgba(127,143,224,.55)';
-    for (const d of scene.drops){
-      d.y += 160 * dt; d.x -= 40 * dt;
-      if (d.y > SH){ d.y = -4; d.x = Math.random() * (SW + 40); }
-      g.fillRect(Math.round(d.x), Math.round(d.y), 1, 3);
-    }
-  } else scene.drops.length = 0;
-
-  // near battlement wall
-  const ws = scene.scroll;
-  g.fillStyle = '#120c2a'; g.fillRect(0, WALL_Y, SW, SH - WALL_Y);
-  g.fillStyle = '#2a2058'; g.fillRect(0, WALL_Y, SW, 1);
-  g.fillStyle = '#0b0818';
-  for (let row = 0; row * 6 + WALL_Y + 6 < SH; row++){
-    const y = WALL_Y + 6 + row * 6;
-    g.fillRect(0, y, SW, 1);
-    const shift = (row % 2) * 6;
-    for (let x = -((ws + shift) % 12); x < SW; x += 12) g.fillRect(Math.round(x), y - 5, 1, 5);
-  }
-  for (let x = -(ws % 16); x < SW; x += 16){
-    g.fillStyle = '#120c2a'; g.fillRect(Math.round(x), WALL_Y - 5, 9, 5);
-    g.fillStyle = '#2a2058'; g.fillRect(Math.round(x), WALL_Y - 5, 9, 1);
-  }
-
-  // torches
-  for (let x = -(ws % 96) + 70; x < SW + 10; x += 96){
-    const tx = Math.round(x);
-    dither(g, tx + 1, WALL_Y + 2, 9 + Math.round(beat * 4), 'rgba(232,105,44,.22)');
-    g.fillStyle = '#4a3020'; g.fillRect(tx, WALL_Y + 3, 3, 6);
-    const f = Math.floor(t * 9 + tx) % 3;
-    g.fillStyle = '#e8692c'; g.fillRect(tx, WALL_Y - 2 - f % 2, 3, 5);
-    g.fillStyle = '#ffb347'; g.fillRect(tx + (f === 2 ? 0 : 1), WALL_Y - 1, 1 + (f === 1), 3);
-    g.fillStyle = '#fff3c4'; g.fillRect(tx + 1, WALL_Y + 1, 1, 1);
-  }
-
-  // spectrum glowing in the wall like magic runes
-  const vals = A && playing ? A.fft.getValue() : null;
-  for (let i = 0; i < 52; i++){
-    let v = vals ? clamp((vals[Math.min(vals.length - 1, Math.floor(i * vals.length / 64) + 1)] + 95) / 70, 0, 1)
-                 : .08 + .06 * Math.sin(t * 2 + i * .4);
-    const h = Math.round(v * 9) * 2;
-    if (!h) continue;
-    const x = 4 + i * 6;
-    g.fillStyle = 'rgba(79,209,197,.75)'; g.fillRect(x, SH - 2 - h, 4, h);
-    g.fillStyle = '#b8fff6'; g.fillRect(x, SH - 2 - h, 4, 1);
-  }
-
-  // the wanderer: walks to the beat while playing, breathes when idle
-  const walking = playing;
-  const frame = walking ? scene.step % 2 : 1;
-  const heroX = 46, heroY = WALL_Y - 14 - (walking ? (frame ? 1 : 0) : (Math.sin(t * 2) > .6 ? 1 : 0));
-  sprite(g, [...HERO_TOP, ...HERO_LEGS[frame]], HERO_COLORS, heroX, heroY);
-  scene.heroX = heroX; scene.heroY = heroY;
-
-}
-
 function drawScene(){
   const c = $('viz'), g = c.getContext('2d');
   g.imageSmoothingEnabled = false;
   const now = performance.now() / 1000, dt = Math.min(.1, now - scene.last);
   scene.last = now;
   scene.scroll += dt * (playing ? 10 * state.bpm / 80 : 2);
-  const t = now, beat = scene.beat, k = ck(g);
+  const t = now, k = ck(g);
 
-  const sid = activeSceneId();
-  if (sid === 'castle'){ g.save(); g.scale(HD, HD); drawCastle(g, t, dt, beat); g.restore(); }
-  else PLACES[sid].draw(g, t, dt, k);
+  PLACES[activeSceneId()].draw(g, t, dt, k);
 
   // notes rising off the wanderer
   for (const n of scene.notes){
@@ -1491,8 +1304,8 @@ function sceneBeat(quarter){
     scene.notes.push({x: scene.heroX + 12, y: scene.heroY - 4, p: Math.random() * 6, life: 2.4, col: Math.random() < .5 ? '#f5c542' : '#4fd1c5'});
 }
 
-// ---------- album places ----------
-// Album scenes are painted at twice the castle's resolution with a small "hi-bit" toolkit:
+// ---------- scenes (castle + album places) ----------
+// Scenes are painted at 2× (640×300) with a small "hi-bit" toolkit:
 // hue-shifted colour ramps, ordered dithering, shaded cloud puffs, leafy canopies,
 // grass blades, wood grain. Backgrounds are painted once and cached; moving parts
 // are drawn on top every frame.
@@ -1508,6 +1321,15 @@ function hash2(x, y, s){
 function vnoise(x, y, sc, seed){
   const xi = Math.floor(x / sc), yi = Math.floor(y / sc), fx = x / sc - xi, fy = y / sc - yi;
   const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed), c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+}
+// value noise that repeats exactly every W pixels, for layers that tile horizontally
+function vnoiseWrap(x, y, sc, seed, W){
+  const P = Math.max(1, Math.round(W / sc)), sx = W / P;
+  const xf = x / sx, yf = y / sc, xi = Math.floor(xf), yi = Math.floor(yf), fx = xf - xi, fy = yf - yi;
+  const x0 = ((xi % P) + P) % P, x1 = (x0 + 1) % P;
+  const a = hash2(x0, yi, seed), b = hash2(x1, yi, seed), c = hash2(x0, yi + 1, seed), d = hash2(x1, yi + 1, seed);
   const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
   return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
 }
@@ -1537,9 +1359,11 @@ const C_DAY    = ['#6e7cb8','#94a4d4','#bccbe8','#e0e8f6','#ffffff'];
 const C_SUNSET = ['#4a2e64','#7a4474','#b86478','#e8907e','#ffc29a','#ffe6c4'];
 const C_NIGHT  = ['#0e1230','#161c40','#222a54','#343e6c','#4c5884'];
 
-function painter(w = DW, h = DH){
+function painter(w = DW, h = DH, opts = {}){
+  const wrap = !!opts.wrap;
   const img = new ImageData(w, h), d = img.data;
   const put = (X, Y, c) => {
+    if (wrap) X = ((X % w) + w) % w;
     if (X < 0 || Y < 0 || X >= w || Y >= h) return;
     const i = (Y * w + X) << 2, a = c[3];
     if (a >= 1){ d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; d[i + 3] = 255; }
@@ -1548,14 +1372,17 @@ function painter(w = DW, h = DH){
       else { d[i] += (c[0] - d[i]) * a; d[i + 1] += (c[1] - d[i + 1]) * a; d[i + 2] += (c[2] - d[i + 2]) * a; d[i + 3] = Math.max(d[i + 3], 255 * a); }
     }
   };
-  const get = (X, Y) => { const i = (Y * w + X) << 2; return [d[i], d[i + 1], d[i + 2], 1]; };
+  const get = (X, Y) => { if (wrap) X = ((X % w) + w) % w; const i = (Y * w + X) << 2; return [d[i], d[i + 1], d[i + 2], 1]; };
   const R = v => Math.round(v * HD);
+  // in wrap mode, drawing and noise repeat across the width so the layer tiles seamlessly
+  const hsh = wrap ? (X, Y, sd) => hash2(((X % w) + w) % w, Y, sd) : hash2;
+  const noise = wrap ? (x, y, sc, sd) => vnoiseWrap(x, y, sc, sd, w) : vnoise;
   const ramp = cols => cols.map(rgb);
   const pick = (rp, v, X, Y) => rp[Math.max(0, Math.min(rp.length - 1, Math.floor(v * rp.length + bay(X, Y))))];
   const box = (x, y, ww, hh) => [R(x), R(y), R(x) + Math.max(1, R(ww)), R(y) + Math.max(1, R(hh))];
 
   const p = {
-    put, get, w, h,
+    put, get, w, h, noise, hsh,
     canvas(){ const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(img, 0, 0); return c; },
     rect(x, y, ww, hh, c){ const col = rgb(c), [X0, Y0, X1, Y1] = box(x, y, ww, hh); for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++) put(X, Y, col); },
     dot(x, y, c){ put(R(x), R(y), rgb(c)); },
@@ -1583,7 +1410,7 @@ function painter(w = DW, h = DH){
     texture(x, y, ww, hh, cols, scale, seed, bias = 0){
       const rp = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh);
       for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++)
-        put(X, Y, pick(rp, vnoise(X, Y, scale * HD, seed) * .8 + hash2(X, Y, seed) * .2 + bias - .1, X, Y));
+        put(X, Y, pick(rp, noise(X, Y, scale * HD, seed) * .8 + hsh(X, Y, seed) * .2 + bias - .1, X, Y));
     },
     // bevelled block: light top/left, dark bottom/right; cols = [dark, base, light]
     box(x, y, ww, hh, cols, outline){
@@ -1599,7 +1426,7 @@ function painter(w = DW, h = DH){
     wood(x, y, ww, hh, cols, seed, vertical){
       const rp = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh);
       for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++){
-        const gr = vertical ? vnoise(X * 4, Y * .5, 10, seed) : vnoise(X * .5, Y * 4, 10, seed);
+        const gr = vertical ? noise(X * 4, Y * .5, 10, seed) : noise(X * .5, Y * 4, 10, seed);
         let v = .2 + gr * .55;
         if (Y === Y0 || X === X0) v = .92; else if (Y === Y1 - 1 || X === X1 - 1) v = .02;
         put(X, Y, pick(rp, v, X, Y));
@@ -1637,7 +1464,7 @@ function painter(w = DW, h = DH){
         for (const q of clumps){ const dx = X - q.x, dy = Y - q.y, cov = 1 - Math.sqrt(dx*dx + dy*dy) / q.r; if (cov > best){ best = cov; bp = q; } }
         if (!bp) continue;
         const lx = (X - bp.x) / bp.r, ly = (Y - bp.y) / bp.r;
-        let l = (-.4 * lx - .7 * ly) * .45 + (-(X - CX) / RX * .35 - (Y - CY) / RY * .65) * .6 + (hash2(X, Y, seed) - .5) * .3;
+        let l = (-.4 * lx - .7 * ly) * .45 + (-(X - CX) / RX * .35 - (Y - CY) / RY * .65) * .6 + (hsh(X, Y, seed) - .5) * .3;
         if (best < .18 && ly > 0) l -= .45;
         put(X, Y, pick(rp, (l + 1) / 2, X, Y));
       }
@@ -1649,15 +1476,15 @@ function painter(w = DW, h = DH){
         const off = Math.round(Math.sin(i * .05 + seed) * 2);
         for (let X = CX - half + off; X <= CX + half + off; X++){
           const rel = (X - (CX + off)) / half;
-          put(X, Y, pick(rp, .55 - rel * .45 + (vnoise(X * 3, Y * .4, 6, seed) - .5) * .3, X, Y));
+          put(X, Y, pick(rp, .55 - rel * .45 + (noise(X * 3, Y * .4, 6, seed) - .5) * .3, X, Y));
         }
       }
     },
     strands(cx, topY, rx, len, cols, seed){
       const rp = ramp(cols), CX = R(cx), RX = R(rx), T = R(topY);
       for (let X = CX - RX; X <= CX + RX; X += 2){
-        if (hash2(X, 1, seed) > .7) continue;
-        const L = Math.round(R(len) * (.35 + .65 * hash2(X, 2, seed)) * (1 - Math.abs((X - CX) / RX) * .5));
+        if (hsh(X, 1, seed) > .7) continue;
+        const L = Math.round(R(len) * (.35 + .65 * hsh(X, 2, seed)) * (1 - Math.abs((X - CX) / RX) * .5));
         for (let j = 0; j < L; j++){
           const sx = X + Math.round(Math.sin(j * .07 + X) * 1.2), v = .95 - j / L * .75;
           put(sx, T + j, pick(rp, v, sx, T + j)); put(sx + 1, T + j, pick(rp, v - .2, sx + 1, T + j));
@@ -1668,11 +1495,11 @@ function painter(w = DW, h = DH){
       const rp = ramp(cols), Y0 = R(y0), n = rp.length;
       for (let Y = Y0; Y < h; Y++) for (let X = 0; X < w; X++){
         const depth = (Y - Y0) / (h - Y0);
-        put(X, Y, pick(rp, .85 - depth * .55 + (vnoise(X, Y, 9, seed) - .5) * .5, X, Y));
+        put(X, Y, pick(rp, .85 - depth * .55 + (noise(X, Y, 9, seed) - .5) * .5, X, Y));
       }
       if (opts.blades !== false) for (let X = 0; X < w; X++){
-        if (hash2(X, 0, seed) > .6) continue;
-        const bh = 1 + Math.floor(hash2(X, 1, seed) * 6);
+        if (hsh(X, 0, seed) > .6) continue;
+        const bh = 1 + Math.floor(hsh(X, 1, seed) * 6);
         for (let j = 1; j <= bh; j++) put(X, Y0 - j, rp[j === bh ? n - 1 : n - 2]);
       }
       (opts.flowers || []).forEach((fc, ci) => {
@@ -1689,11 +1516,11 @@ function painter(w = DW, h = DH){
         const top = R(fn(X / HD));
         for (let Y = top; Y < h; Y++){
           const depth = Math.min(1, (Y - top) / R(opts.depth || 30));
-          put(X, Y, pick(rp, .9 - depth * .65 + (vnoise(X, Y, 8, seed) - .5) * .45, X, Y));
+          put(X, Y, pick(rp, .9 - depth * .65 + (noise(X, Y, 8, seed) - .5) * .45, X, Y));
         }
         if (rim) put(X, top, rim);
-        if (opts.blades && hash2(X, 3, seed) < .5){
-          const bh = 1 + Math.floor(hash2(X, 4, seed) * 4);
+        if (opts.blades && hsh(X, 3, seed) < .5){
+          const bh = 1 + Math.floor(hsh(X, 4, seed) * 4);
           for (let j = 1; j <= bh; j++) put(X, top - j, rp[j === bh ? n - 1 : n - 2]);
         }
       }
@@ -1703,10 +1530,10 @@ function painter(w = DW, h = DH){
       for (let Y = B - R(3); Y < B; Y++) for (let X = CX - 1; X <= CX + 1; X++) put(X, Y, rp[0]);
       for (let i = 0; i < H - R(3); i++){
         const Y = B - H + i, ti = i % tier;
-        const w2 = Math.round(ti / tier * H * .16 + i * .2) + (hash2(i, 0, seed) < .3 ? 1 : 0);
+        const w2 = Math.round(ti / tier * H * .16 + i * .2) + (hsh(i, 0, seed) < .3 ? 1 : 0);
         for (let X = CX - w2; X <= CX + w2; X++){
           const rel = (X - CX) / (w2 + 1);
-          const v = .55 - rel * .45 + (ti < tier * .2 ? .15 : 0) - (ti > tier - 3 ? .25 : 0) + (hash2(X, Y, seed) - .5) * .25;
+          const v = .55 - rel * .45 + (ti < tier * .2 ? .15 : 0) - (ti > tier - 3 ? .25 : 0) + (hsh(X, Y, seed) - .5) * .25;
           put(X, Y, pick(rp, v, X, Y));
         }
       }
@@ -1725,7 +1552,7 @@ function painter(w = DW, h = DH){
       for (let y = -rr; y <= rr; y++) for (let x = -rr; x <= rr; x++){
         if (x*x + y*y > rr*rr) continue;
         let l = (-.45 * x - .55 * y) / rr * .6 + .55;
-        if (vnoise(X0 + x, Y0 + y, 5, 9) > .62) l -= .3;
+        if (noise(X0 + x, Y0 + y, 5, 9) > .62) l -= .3;
         put(X0 + x, Y0 + y, pick(rp, l, X0 + x, Y0 + y));
       }
     },
@@ -1935,7 +1762,371 @@ function driftClouds(k, dt, key, n, maxY, cols){
   }
 }
 
+// ---- the castle (Create tab) ----
+// Same toolkit as the album scenes, but every layer wraps seamlessly so the
+// parallax can scroll forever while the wanderer walks the battlements.
+const CW_FAR = 640, CW_MID = 640, CW_KEEP = 480, CW_WALL = 384; // logical widths of the wrapping layers
+const C_CASTLE = ['#170f34','#22184a','#30225c','#42306e','#5a4486','#7a62a8'];
+const R_IVY = ['#081414','#0c1e1a','#12281e','#1a3424','#24402a','#30502e'];
+const KEEP_WINDOWS = [], KEEP_FLAGS = [], KEEP_ROSE = [];
+const TAU = Math.PI * 2;
+const farRidge = x => 90 - 9 * Math.sin(TAU * x / CW_FAR * 2 + 1) - 6 * Math.sin(TAU * x / CW_FAR * 5 + 2) - 2.5 * Math.sin(TAU * x / CW_FAR * 13);
+const midRidge = x => 104 - 5 * Math.sin(TAU * x / CW_MID * 3 + 4) - 2.5 * Math.sin(TAU * x / CW_MID * 7);
+let CASTLE = null;
+
+function castleLayers(){
+  return CASTLE ||= {
+    sky: paintCastleSky(),
+    far: paintRidge(CW_FAR, farRidge, ['#130d34','#18113e','#1e1648','#261d54','#30265f'], 51, '#6a58b0', 26, null, true),
+    mid: paintRidge(CW_MID, midRidge, ['#0c0824','#100b2c','#150f36','#1a1340'], 52, '#3e3080', 14, ['#06041a','#0a0722','#0f0b2c','#16113a']),
+    keep: paintKeep(),
+    mist: paintMist(),
+    wall: paintWall(),
+    lit: ['#ffd27a', '#ff9a48'].map(base => {
+      const p = painter(5, 8);
+      for (let j = 0; j < 8; j++) for (let i = 0; i < 5; i++){
+        if (j === 0 && (i === 0 || i === 4)) continue;
+        p.put(i, j, rgb(i === 2 || j === 4 ? '#7a3c14' : j < 3 ? '#fff4c8' : base));
+      }
+      return p.canvas();
+    }),
+  };
+}
+
+// draw a wrapping layer across the view; returns its left edge in device pixels
+function wrapDraw(g, cv, shift, y = 0){
+  const W = cv.width, off = -(((Math.round(shift * HD) % W) + W) % W);
+  for (let x = off; x < DW; x += W) g.drawImage(cv, x, Math.round(y * HD));
+  return off;
+}
+
+function paintCastleSky(){
+  const p = painter();
+  p.sky(['#0a0620','#110a2e','#1a0f3c','#241449','#2f1955','#3c1e5e','#4b2366'], 0, SH);
+  // a faint river of stardust
+  for (let Y = 0; Y < 104 * HD; Y++) for (let X = 0; X < DW; X++){
+    const dd = Math.abs(Y - (12 + X / DW * 52) * HD) / (15 * HD);
+    if (dd >= 1) continue;
+    if ((1 - dd) * vnoise(X, Y, 16, 3) + bay(X, Y) * .35 > .5) p.put(X, Y, [170, 150, 240, .13]);
+    if (hash2(X, Y, 5) < .006 * (1 - dd)) p.put(X, Y, rgb('#e0d8ff'));
+  }
+  p.stars(170, 104, 7);
+  p.glow(262, 28, 46, '#b8a8ff', .5);
+  p.moon(262, 28, 12);
+  p.cloud(214, 46, 96, 11, C_CASTLE, 61);
+  p.cloud(66, 30, 74, 9, C_CASTLE, 62);
+  p.cloud(140, 66, 170, 12, C_CASTLE, 63);
+  return p.canvas();
+}
+
+function paintRidge(cw, fn, cols, seed, rim, depth, pines, moonlit){
+  const p = painter(cw * HD, DH, {wrap: true});
+  p.hill(fn, cols, seed, {rim, depth});
+  // slopes that face the moon (on the right) catch a little light
+  if (moonlit) for (let X = 0; X < p.w; X++){
+    const top = Math.round(fn(X / HD) * HD), s = fn((X + 2) / HD) - fn((X - 2) / HD);
+    if (s <= 0) continue;
+    const n = Math.min(10, Math.round(s * 12));
+    for (let j = 1; j < n; j++) if (bay(X, top + j) < .3 - j / n * .6) p.put(X, top + j, [150, 132, 232, .45]);
+  }
+  if (pines){
+    const r = mulberry32(seed + 1);
+    for (let x = 0; x < cw; x += 4 + Math.floor(r() * 7)) p.pine(x, fn(x) + 3, 8 + Math.floor(r() * 12), pines, x);
+  }
+  return p.canvas();
+}
+
+function paintMist(){
+  const W = CW_FAR * HD, H = 48, p = painter(W, H, {wrap: true});
+  for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++){
+    const v = p.noise(X, Y, 28, 71) * (1 - Math.abs(Y - H / 2) / (H / 2));
+    const al = Math.floor((v * 1.8 + bay(X, Y) * .5) * 4) / 4 * .2;
+    if (al > 0) p.put(X, Y, [120, 100, 190, al]);
+  }
+  return p.canvas();
+}
+
+function paintKeep(){
+  const p = painter(CW_KEEP * HD, DH, {wrap: true}), GROUND = 118;
+  const SK = ['#100a26','#160f32','#1d153e','#251c4a','#2f2558','#3b2f68','#4a3c7a'].map(rgb);
+  const RF = ['#0c0820','#130d2c','#1b1438','#241b46','#2e2454','#3a2e64'].map(rgb);
+  const RIM = rgb('#8a78d0'), DARK = rgb('#07040f'), LEDGE = rgb('#5a4a96');
+  const pk = (rp, v, X, Y) => rp[Math.max(0, Math.min(rp.length - 1, Math.floor(v * rp.length + bay(X, Y))))];
+  const D = v => Math.round(v * HD);
+
+  // coursed stone, lit from the moon on the right
+  function stone(x, top, w, bottom, seed, round){
+    const X0 = D(x), X1 = D(x + w), Y0 = D(top), Y1 = D(bottom);
+    for (let Y = Y0; Y < Y1; Y++){
+      const row = Math.floor((Y - Y0) / 6), inRow = (Y - Y0) % 6;
+      for (let X = X0; X < X1; X++){
+        const rel = (X - X0) / Math.max(1, X1 - X0 - 1) * 2 - 1, sx = X - X0 + (row % 2) * 6;
+        let v = round ? .36 + rel * .3 - rel * rel * .1 : .34 + rel * .1;
+        if (inRow === 5 || sx % 12 === 0) v -= .2;
+        v += (p.noise(X, Y, 8, seed) - .5) * .22 + (p.hsh(sx / 12 | 0, row, seed) - .5) * .12;
+        p.put(X, Y, pk(SK, v, X, Y));
+      }
+      p.put(X1 - 1, Y, RIM);
+    }
+  }
+  function ledge(x, w, top){ for (let X = D(x); X < D(x + w); X++) p.put(X, D(top), LEDGE); }
+  function crenels(x, w, top, seed){ for (let mx = x; mx < x + w - 1; mx += 4) stone(mx, top - 3, 2.5, top, seed + mx, false); }
+  function archWin(x, y, seed){
+    const X0 = D(x), Y0 = D(y);
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 5; i++){
+      if (j === 0 && (i === 0 || i === 4)) continue;
+      p.put(X0 + i, Y0 + j, rgb('#05030c'));
+    }
+    for (let i = -1; i < 6; i++) p.put(X0 + i, Y0 + 8, rgb('#4e4088'));
+    KEEP_WINDOWS.push({x, y, seed});
+  }
+  function windows(x, w, top, seed){
+    const r = mulberry32(seed), cols = w >= 20 ? [x + w * .3 - 1.25, x + w * .7 - 1.25] : [x + w / 2 - 1.25];
+    for (let y = top + 8; y < GROUND - 8; y += 12) for (const cx of cols) if (r() < .7) archWin(cx, y, r());
+  }
+  function spire(cx, baseY, w, h){
+    const CX = D(cx), B = D(baseY), H = D(h), half0 = D(w / 2 + 1.5);
+    for (let i = 0; i < H; i++){
+      const Y = B - i, hw = half0 * (1 - i / H), L = Math.round(CX - hw), Rr = Math.round(CX + hw);
+      for (let X = L; X <= Rr; X++){
+        let v = .3 + (X - CX) / (hw + .5) * .35;
+        if ((i & 3) === 3) v -= .18;
+        else if (((X + (((i >> 2) & 1) << 1)) & 3) === 0) v -= .07;
+        p.put(X, Y, pk(RF, v, X, Y));
+      }
+      p.put(Rr, Y, rgb('#6a5aac'));
+    }
+    for (let X = CX - half0 - 1; X <= CX + half0 + 1; X++){ p.put(X, B, rgb('#3a2e6a')); p.put(X, B + 1, DARK); }
+    for (let j = 1; j < D(6); j++) p.put(CX, B - H - j + 1, rgb('#3a3060'));
+    p.put(CX, B - H - D(6) + 1, rgb('#f5c542'));
+    KEEP_FLAGS.push({x: cx, y: baseY - h - 5.5});
+  }
+  function roundTower(x, w, top, spireH, seed){
+    stone(x, top, w, GROUND + 4, seed, true);
+    for (let X = D(x - 1); X < D(x + w + 1); X++){
+      p.put(X, D(top), rgb('#4a3c86')); p.put(X, D(top) + 1, rgb('#241c4a'));
+      if (((X - D(x)) & 3) === 0) p.put(X, D(top) + 2, DARK);
+    }
+    if (spireH) spire(x + w / 2, top, w, spireH); else crenels(x - .5, w + 1, top, seed);
+    windows(x, w, top, seed);
+  }
+  function squareTower(x, w, top, seed){
+    stone(x, top, w, GROUND + 4, seed, false);
+    ledge(x, w, top); crenels(x - .5, w + 1, top, seed);
+    windows(x, w, top, seed);
+  }
+  function wall(x, w, top, seed){
+    stone(x, top, w, GROUND + 4, seed, false);
+    ledge(x, w, top); crenels(x, w, top, seed);
+  }
+  function gate(x, w, top){
+    const X0 = D(x), X1 = D(x + w), Y0 = D(top), Y1 = D(GROUND + 4), cx = (X0 + X1 - 1) / 2, r = (X1 - X0) / 2;
+    for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++){
+      const dy = Y - (Y0 + r);
+      if (dy < 0 && (X - cx) ** 2 + dy * dy > r * r) continue;
+      const bar = (X - X0) % 4 === 1 || (Y - Y0) % 5 === 2;
+      p.put(X, Y, bar ? rgb('#0a0610') : pk(['#2a1208','#4a200c','#6a3010','#8a4416'].map(rgb), (Y - Y0) / (Y1 - Y0), X, Y));
+    }
+    for (let a = 0; a <= Math.PI; a += .04) p.put(Math.round(cx + Math.cos(a) * (r + 1)), Math.round(Y0 + r - Math.sin(a) * (r + 1)), rgb('#4a3c86'));
+  }
+  function chapel(x, w, top, peak, seed){
+    stone(x, top, w, GROUND + 4, seed, false);
+    const CX = D(x + w / 2), T = D(top), P = D(peak), HW = D(w / 2 + 1.5);
+    for (let Y = P; Y <= T; Y++){
+      const hw = HW * (Y - P) / (T - P);
+      for (let X = Math.round(CX - hw); X <= Math.round(CX + hw); X++)
+        p.put(X, Y, pk(RF, .3 + (X - CX) / (hw + .5) * .3 + (((Y - P) & 3) === 3 ? -.18 : 0), X, Y));
+      p.put(Math.round(CX + hw), Y, rgb('#6a5aac'));
+    }
+    for (let j = 0; j < D(6); j++) p.put(CX, P - j, rgb('#3a3060'));
+    for (let i = -2; i <= 2; i++) p.put(CX + i, P - D(4), rgb('#3a3060'));
+    // the rose window is always lit
+    const RX = CX, RY = D(top + 12), RR = D(6);
+    for (let y = -RR; y <= RR; y++) for (let xx = -RR; xx <= RR; xx++){
+      const d = Math.sqrt(xx * xx + y * y);
+      if (d > RR) continue;
+      const ang = Math.atan2(y, xx), tracery = Math.abs(Math.sin(ang * 4)) < .16 || Math.abs(d - RR * .55) < .9;
+      const c = d > RR - 1.2 ? '#1a1236' : tracery ? '#3a2a20' : d < RR * .3 ? '#fff0b8' : Math.sin(ang * 8) > 0 ? '#ffb347' : '#e8692c';
+      p.put(RX + xx, RY + y, rgb(c));
+    }
+    KEEP_ROSE.push({x: x + w / 2, y: top + 12});
+    for (const lx of [x + w * .25, x + w * .75 - 2.5]) for (let y = top + 22; y < GROUND - 6; y += 14) archWin(lx, y, (lx * 7 + y) % 1);
+    for (const bx of [x + 1, x + w - 4]){
+      stone(bx, top + 6, 3, GROUND + 4, 7, false);
+      for (let i = 0; i < D(3); i++) for (let X = D(bx); X < D(bx + 3) - i; X++) p.put(X, D(top + 6) - i - 1, pk(SK, .45, X, D(top + 6) - i - 1));
+    }
+  }
+  function bridge(x0, x1, deckY, seed){
+    const X0 = D(x0), X1 = D(x1), DB = D(deckY + 5);
+    for (let X = X0; X < X1; X++){
+      const t = (X - X0) / (X1 - X0), bottom = DB + Math.round(D(12) * (1 - Math.sin(t * Math.PI)));
+      for (let Y = DB; Y < bottom; Y++) p.put(X, Y, pk(SK, .28 + (p.noise(X, Y, 8, seed) - .5) * .25, X, Y));
+      p.put(X, bottom, rgb('#07040f'));
+    }
+    stone(x0, deckY, x1 - x0, deckY + 5, seed, false);
+    ledge(x0, x1 - x0, deckY); crenels(x0, x1 - x0, deckY, seed);
+  }
+  function bartizan(x, top, seed){
+    for (let i = 0; i < D(5); i++){
+      const hw = D(3) * (1 - i / D(5)), Y = D(top + 4) + i;
+      for (let X = Math.round(D(x + 3) - hw); X <= Math.round(D(x + 3) + hw); X++) p.put(X, Y, pk(SK, .3 + (X - D(x + 3)) / D(3) * .3, X, Y));
+    }
+    stone(x, top - 9, 6, top + 4, seed, true);
+    spire(x + 3, top - 9, 6, 9);
+    archWin(x + 1.75, top - 5, .3);
+  }
+
+  // walls and the bridge sit behind the towers
+  wall(26, 40, 86, 101); gate(40, 10, 100);
+  wall(162, 34, 84, 106);
+  wall(222, 52, 92, 108); bridge(222, 274, 72, 109);
+  wall(292, 60, 88, 111); bartizan(318, 88, 112);
+  wall(376, 44, 92, 114);
+  wall(440, 48, 96, 116); // runs past the edge and wraps back to the first tower
+  roundTower(8, 18, 66, 16, 102);
+  roundTower(66, 22, 48, 22, 103);
+  chapel(88, 58, 70, 50, 104);
+  squareTower(146, 16, 60, 105);
+  roundTower(196, 26, 40, 26, 107);
+  roundTower(274, 18, 56, 14, 110);
+  squareTower(352, 24, 64, 113);
+  roundTower(420, 20, 58, 18, 115);
+  p.canopy(34, 104, 5, 8, R_IVY, 117); p.canopy(300, 100, 6, 9, R_IVY, 118);
+  p.canopy(152, 108, 4, 8, R_IVY, 119); p.canopy(384, 106, 5, 7, R_IVY, 120);
+  return p.canvas();
+}
+
+function paintWall(){
+  const WW = CW_WALL * HD, p = painter(WW, DH, {wrap: true}), Y0 = WALL_Y * HD;
+  const WS = ['#0a0620','#100a2a','#161034','#1d1640','#251d4c','#2f265a','#3a3068'].map(rgb);
+  const pk = (v, X, Y) => WS[Math.max(0, Math.min(WS.length - 1, Math.floor(v * WS.length + bay(X, Y))))];
+  // merlons along the outer edge of the walkway
+  for (let mx = 0; mx < CW_WALL; mx += 16){
+    const X0 = mx * HD, X1 = (mx + 9) * HD, T = (WALL_Y - 5) * HD;
+    for (let Y = T; Y < Y0; Y++){
+      for (let X = X0; X < X1; X++){
+        let v = .38 + ((X - X0) / (X1 - X0 - 1) * 2 - 1) * .18 + (p.noise(X, Y, 5, 91) - .5) * .3;
+        if (Y === T) v = .95; else if (Y === T + 1) v += .2;
+        if (Y - T === 5) v -= .25;
+        p.put(X, Y, pk(v, X, Y));
+      }
+      p.put(X1 - 1, Y, rgb('#6a5aac'));
+    }
+  }
+  // walkway lip, then the wall face in big shaded blocks
+  for (let Y = Y0; Y < DH; Y++){
+    const ly = Y - Y0;
+    for (let X = 0; X < WW; X++){
+      if (ly < 2){ p.put(X, Y, rgb(ly === 0 ? '#5a4a9a' : '#2e2560')); continue; }
+      const row = Math.floor((ly - 2) / 12), inRow = (ly - 2) % 12;
+      const sx = (X + (row % 2) * 12) % WW, bx = Math.floor(sx / 24), inCol = sx % 24;
+      if (inRow === 11 || inCol === 23){ p.put(X, Y, rgb('#07040f')); continue; }
+      let v = .5 + (p.hsh(bx, row, 81) - .5) * .35 + (p.noise(X, Y, 6, 82) - .5) * .3 - ly / (DH - Y0) * .3;
+      if (inRow === 0 || inCol === 0) v += .22; else if (inRow === 10 || inCol === 22) v -= .2;
+      p.put(X, Y, pk(v, X, Y));
+      if (inRow < 3 && p.hsh(bx, row, 83) < .14 && ((X + Y) & 1) && p.hsh(X, Y, 84) < .6) p.put(X, Y, rgb(p.hsh(X, Y, 85) < .5 ? '#1e3a2a' : '#2a4a30'));
+    }
+  }
+  // a few cracked blocks
+  for (let row = 0; row < 4; row++) for (let bx = 0; bx < WW / 24; bx++){
+    if (p.hsh(bx, row, 86) > .08) continue;
+    let X = bx * 24 - (row % 2) * 12 + 6, Y = Y0 + 2 + row * 12 + 2;
+    for (let i = 0; i < 9; i++){ p.put(X, Y, rgb('#07040f')); X += i % 3 === 2 ? -1 : 1; Y++; }
+  }
+  // torch brackets every 96, matching where the flames are drawn
+  for (let tx = 70; tx < CW_WALL; tx += 96){
+    p.box(tx + .5, WALL_Y + 3.5, 2, 5, ['#0a0810','#1c1828','#3a3650']);
+    p.box(tx - .5, WALL_Y + 1.5, 4, 2, ['#0a0810','#2a2638','#5a5670']);
+    p.box(tx, WALL_Y + 8, 3, 1.5, ['#0a0810','#1c1828','#3a3650']);
+  }
+  // ivy spilling over the walkway
+  for (const x of [28, 118, 214, 312]){
+    p.canopy(x, WALL_Y + 2.5, 6, 2, R_IVY, x);
+    p.strands(x, WALL_Y + 3.5, 5.5, 13, R_IVY, x + 1);
+  }
+  return p.canvas();
+}
+
+function torchFlame(k, x, t, beat){
+  const base = WALL_Y + 1.5;
+  k.glow(x + 1.5, WALL_Y + 6, 26, '#e8692c', .1 + beat * .06);
+  k.glow(x + 1.5, base - 3, 12 + beat * 5, '#ffa040', .45 + beat * .25);
+  for (let f = 0; f < 3; f++){
+    const fx = x + .5 + f, h = (4 + 2 * Math.sin(t * 11 + f * 2.1 + x)) * (1 + beat * .25) * (f === 1 ? 1.3 : 1);
+    for (let j = 0; j < h; j += .5){
+      const tt = j / h, w = (1 - tt ** 1.3) * 1.6, sx = fx + Math.sin(t * 9 + f + j * .4) * tt * .6;
+      k.rect(sx - w / 2, base - j, w, .5, tt > .7 ? '#c8381c' : '#e8692c');
+      if (tt < .55) k.rect(sx - w * .25, base - j, w * .5, .5, tt < .25 ? '#fff0b0' : '#ffb347');
+    }
+  }
+}
+
 const PLACES = {
+  // ---- the castle on the Create tab ----
+  castle:{
+    draw(g, t, dt, k){
+      const L = castleLayers(), sc = scene.scroll, beat = scene.beat;
+      g.drawImage(L.sky, 0, 0);
+      for (const s of drifting('cStars', 28, () => ({x: Math.random() * SW, y: Math.random() * 96, p: Math.random() * 6, s: .6 + Math.random() * 2}))){
+        const tw = Math.sin(t * s.s + s.p);
+        if (tw > .7){ k.dot(s.x, s.y, '#ffffff'); if (tw > .95) k.glow(s.x, s.y, 2.5, '#e0d8ff', .6); }
+      }
+      const ss = pst.shoot ||= {life: 0};
+      if (ss.life <= 0 && Math.random() < .0015) Object.assign(ss, {x: 30 + Math.random() * 180, y: 6 + Math.random() * 30, life: .8});
+      if (ss.life > 0){
+        ss.life -= dt; ss.x += 150 * dt; ss.y += 45 * dt;
+        for (let i = 0; i < 16; i++) k.dot(ss.x - i * 1.1, ss.y - i * .33, `rgba(240,235,255,${(1 - i / 16) * Math.min(1, ss.life * 2)})`);
+      }
+      k.glow(262, 28, 22, '#c8b8ff', .15 + beat * .25);
+      for (const b of drifting('cBats', 3, i => ({x: SW + 20 + i * 150, y: 18 + i * 14, v: 18 + i * 5, p: i * 2}))){
+        b.x -= b.v * dt;
+        if (b.x < -10){ b.x = SW + 20 + Math.random() * 160; b.y = 14 + Math.random() * 40; }
+        k.sprite(BAT[Math.floor(t * 7 + b.p) % 2], {k:'#0a0614'}, b.x, b.y + Math.sin(t * 3 + b.p) * 4);
+      }
+      wrapDraw(g, L.far, sc * .12);
+      wrapDraw(g, L.mid, sc * .25);
+      const ko = wrapDraw(g, L.keep, sc * .45), KW = L.keep.width;
+      for (let base = ko; base < DW; base += KW){
+        for (const w of KEEP_WINDOWS){
+          const X = base + Math.round(w.x * HD);
+          if (X < -10 || X > DW + 10 || Math.sin(t * .7 + w.seed * 40) <= -.4) continue;
+          const warm = w.seed > .5 + beat * .3 ? 1 : 0;
+          k.glow(X / HD + 1.25, w.y + 2, 5, warm ? '#ff8a3a' : '#ffc060', .28 + beat * .12);
+          g.drawImage(L.lit[warm], X, Math.round(w.y * HD));
+        }
+        for (const r of KEEP_ROSE){
+          const X = base + Math.round(r.x * HD);
+          if (X > -40 && X < DW + 40) k.glow(X / HD, r.y, 14, '#ffb050', .3 + beat * .25);
+        }
+        for (const f of KEEP_FLAGS){
+          const X = base + Math.round(f.x * HD), Y = Math.round(f.y * HD);
+          if (X < -20 || X > DW) continue;
+          for (let i = 0; i < 14; i++){
+            const hgt = Math.max(2, Math.round(6 * (1 - i / 14))), yo = Math.round(Math.sin(t * 6 - i * .5) * 1.5 * (i / 14));
+            g.fillStyle = '#e8566a'; g.fillRect(X + 1 + i, Y + yo, 1, 1);
+            g.fillStyle = '#c2334d'; g.fillRect(X + 1 + i, Y + yo + 1, 1, hgt - 2);
+            g.fillStyle = '#7a1a30'; g.fillRect(X + 1 + i, Y + yo + hgt - 1, 1, 1);
+          }
+        }
+      }
+      wrapDraw(g, L.mist, sc * .6 + t * 3, 98);
+      outdoorRain(k, dt, 'castle');
+      const wo = wrapDraw(g, L.wall, sc);
+      for (let X = wo + 70 * HD; X < DW + 20; X += 96 * HD) if (X > -20) torchFlame(k, X / HD, t, beat);
+      // the spectrum glows out of the wall like runes
+      spectrum(52, t).forEach((v, i) => {
+        const h = Math.round(v * 18 * HD) / HD;
+        if (h < .5) return;
+        const x = 4 + i * 6;
+        k.rect(x, SH - 2 - h, 2, h, 'rgba(79,209,197,.7)');
+        k.rect(x + .5, SH - 2 - h, 1, h, 'rgba(184,255,246,.55)');
+        k.rect(x, SH - 2 - h, 2, .5, '#d8fffa');
+        if (h > 6) k.glow(x + 1, SH - 2 - h, 3.5, '#4fd1c5', .45);
+      });
+      walkHero(k, 46, WALL_Y);
+    },
+  },
+
   // ---- cozy home office, rain on the window ----
   office:{
     bg(p){
