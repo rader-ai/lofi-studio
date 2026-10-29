@@ -1803,35 +1803,62 @@ function painter(w = DW, h = DH, opts = {}){
         }
       }
     },
-    // a leafy canopy built from many small shaded clumps
-    canopy(cx, cy, rx, ry, cols, seed){
-      const rp = ramp(cols), r = mulberry32(seed), clumps = [], n = Math.round(rx * ry / 9) + 6;
-      for (let i = 0; i < n * 6 && clumps.length < n; i++){
-        const ax = r() * 2 - 1, ay = r() * 2 - 1;
-        if (ax*ax + ay*ay > 1) continue;
-        clumps.push({x: R(cx + ax * rx), y: R(cy + ay * ry), r: R(2.4 + r() * 3.4)});
-      }
-      const CX = R(cx), CY = R(cy), RX = R(rx), RY = R(ry);
-      for (let Y = R(cy - ry - 7); Y < R(cy + ry + 7); Y++) for (let X = R(cx - rx - 7); X < R(cx + rx + 7); X++){
-        let best = 0, bp = null;
-        for (const q of clumps){ const dx = X - q.x, dy = Y - q.y, cov = 1 - Math.sqrt(dx*dx + dy*dy) / q.r; if (cov > best){ best = cov; bp = q; } }
-        if (!bp) continue;
-        const lx = (X - bp.x) / bp.r, ly = (Y - bp.y) / bp.r;
-        let l = (-.4 * lx - .7 * ly) * .45 + (-(X - CX) / RX * .35 - (Y - CY) / RY * .65) * .6 + (hsh(X, Y, seed) - .5) * .3;
-        if (best < .18 && ly > 0) l -= .45;
-        put(X, Y, pick(rp, (l + 1) / 2, X, Y));
-      }
-    },
-    trunk(x, baseY, hgt, cols, seed){
-      const rp = ramp(cols), CX = R(x), B = R(baseY), H = R(hgt);
-      for (let i = 0; i < H; i++){
-        const Y = B - i, half = Math.round(3 + (1 - i / H) * 3 + (i < 6 ? 6 - i : 0) * .6);
-        const off = Math.round(Math.sin(i * .05 + seed) * 2);
-        for (let X = CX - half + off; X <= CX + half + off; X++){
-          const rel = (X - (CX + off)) / half;
-          put(X, Y, pick(rp, .55 - rel * .45 + (noise(X * 3, Y * .4, 6, seed) - .5) * .3, X, Y));
+    // A leafy crown that reads as ONE tree: a single mass with an irregular, scalloped
+    // edge, lit as one volume from the upper left. Leaf clusters show as highlights on
+    // their light-facing sides rather than as separate balls, and optional gaps let the
+    // branches and sky peek through.
+    canopy(cx, cy, rx, ry, cols, seed, opts = {}){
+      const rp = ramp(cols), n = rp.length, CX = R(cx), CY = R(cy), RX = R(rx), RY = R(ry);
+      // texture scales follow the crown's size; long hedges take theirs from the height
+      const base = Math.min(RX, RY * 2.5), big = Math.max(5, base * .6), mid = Math.max(2.5, base * .15), fine = Math.max(1.5, base * .07);
+      const flat = opts.flat ?? 9, holes = opts.holes || 0, lightX = opts.lightX ?? .55;
+      for (let Y = Math.floor(CY - RY * 1.4); Y <= CY + RY * 1.4; Y++){
+        for (let X = Math.floor(CX - RX * 1.4); X <= CX + RX * 1.4; X++){
+          const u = (X - CX) / RX, v = (Y - CY) / RY, cluster = noise(X, Y, mid, seed + 1);
+          let d = 1 - u * u - v * v + (noise(X, Y, big, seed) - .5) * .45 + (cluster - .5) * .35 + (noise(X, Y, fine, seed + 2) - .5) * .2;
+          if (v > flat) d -= (v - flat) * 5;
+          if (d <= 0) continue;
+          if (holes && v > -.3 && v < .65 && d > .12 && noise(X, Y, mid * .9, seed + 7) > 1 - holes) continue;
+          const toLight = -(u * lightX + v * .8);
+          // each leaf cluster gets a crisp lit top and a shaded underside; the crown's overall
+          // light still dominates, so it reads as one tree with leafy texture
+          const lit = cluster - noise(X - mid * .45, Y - mid * .6, mid, seed + 1);
+          let sh = .45 + toLight * .55 + (lit > .05 ? .2 : lit < -.05 ? -.16 : 0) + (hsh(X, Y, seed) - .5) * .1;
+          if (d < .07) sh += toLight > 0 ? .2 : -.15;
+          put(X, Y, rp[Math.max(0, Math.min(n - 1, Math.floor(sh * n + bay(X, Y) * .3)))]);
         }
       }
+    },
+    // a trunk with a root flare, a gentle lean and bark streaks, forking into branches
+    // that disappear up into the crown
+    trunk(x, baseY, hgt, cols, seed, opts = {}){
+      const rp = ramp(cols), CX = R(x), B = R(baseY), H = R(hgt), lean = (opts.lean || 0) * HD;
+      const w0 = (opts.w || 2.6) * HD, w1 = Math.max(1.2, w0 * .5);
+      for (let i = 0; i < H; i++){
+        const t = i / H, Y = B - i, half = w0 + (w1 - w0) * t + (i < 10 ? (10 - i) * .4 : 0), cx = CX + lean * t * t;
+        for (let X = Math.round(cx - half); X <= Math.round(cx + half); X++){
+          const rel = (X - cx) / (half + .5);
+          put(X, Y, pick(rp, .55 - rel * .45 + (noise(X * 3, Y * .35, 6, seed) - .5) * .35, X, Y));
+        }
+      }
+      const r = mulberry32(seed + 5), tx = CX + lean, ty = B - H;
+      for (let b = 0; b < (opts.branches ?? 3); b++){
+        const side = b % 2 ? 1 : -1, ang = -Math.PI / 2 + side * (.45 + r() * .5), len = R((opts.reach || 10) * (.6 + r() * .5));
+        let px = tx, py = ty + Math.round(r() * H * .2);
+        for (let st = 0; st < len; st++){
+          px += Math.cos(ang); py += Math.sin(ang);
+          const w = Math.max(.5, (1 - st / len) * w1 * .9), c = Math.ceil(w);
+          for (let yy = -c; yy <= c; yy++) for (let xx = -c; xx <= c; xx++)
+            if (xx * xx + yy * yy <= w * w + .5) put(Math.round(px + xx), Math.round(py + yy), rp[xx < 0 ? 2 : 1]);
+        }
+      }
+    },
+    // a whole tree: shadow on the ground, trunk and branches, then the crown over them
+    tree(x, baseY, o){
+      const lean = o.lean || 0;
+      p.ellipse(x + lean * .5, baseY + .5, o.rx * .8, 1.5, 'rgba(10,30,15,.3)');
+      p.trunk(x, baseY, o.h, o.bark || R_WOOD, o.seed, {lean, w: o.w, reach: Math.min(o.rx, o.ry) * .95, branches: o.branches});
+      p.canopy(x + lean, baseY - o.h - o.ry * .55, o.rx, o.ry, o.leaf, o.seed + 11, {holes: o.holes ?? .1});
     },
     strands(cx, topY, rx, len, cols, seed){
       const rp = ramp(cols), CX = R(cx), RX = R(rx), T = R(topY);
@@ -2098,6 +2125,108 @@ const PIGEON = [
   ['..gg.', 'kgggg', '.ggg.', '..r..'],
   ['.....', 'ggggk', '.ggg.', '..r..'],
 ];
+
+// ---- people strolling through the park ----
+// They reuse the hoodie templates with their own colours; mapping the headphone
+// pixels (p, P) to the hair colour takes the headphones off.
+const flipRows = rows => { const w = Math.max(...rows.map(r => r.length)); return rows.map(r => [...r.padEnd(w, '.')].reverse().join('')); };
+const FOLK = {
+  lady:   {head: HEAD_GIRL, body: BODY_GIRL, colors: {_flat:1, k:'#1a1020', h:'#7a4a2a', H:'#a8703e', s:'#e8b48a', S:'#c48a64', e:'#1a1020', r:'#e88a8a',
+           p:'#7a4a2a', P:'#7a4a2a', o:'#4a8ab0', O:'#2e6a8a', L:'#7ab8d8', d:'#4a8ab0', j:'#2a2438', J:'#1e1a2c', w:'#c2334d'}},
+  walker: {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#a8a8b4', H:'#d8d8e0', s:'#d8a07a', S:'#b47e5a', e:'#1a1020',
+           p:'#a8a8b4', P:'#a8a8b4', o:'#4f7a3a', O:'#36582a', L:'#78a856', d:'#4f7a3a', j:'#3a4a78', J:'#28345a', w:'#6b4426'}},
+  runner: {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1a12', H:'#4a3020', s:'#9a6440', S:'#7a4a2c', e:'#1a1020',
+           p:'#f4f0f8', P:'#4fd1c5', o:'#e04a4a', O:'#a83030', L:'#ff7a6a', d:'#e04a4a', j:'#2a2a36', J:'#1a1a24', w:'#4fd1c5'}},
+};
+function drawFolk(k, f, x, gy, dir, frame, bob = 0){
+  const rows = [...f.head, ...f.body, ...LEGS_WALK[frame]];
+  k.sprite(dir > 0 ? rows : flipRows(rows), f.colors, x, gy - rows.length - bob);
+}
+// a pram, 13 wide; its handle reaches back toward whoever is pushing
+function drawPram(k, x, gy, dir, bob){
+  const M = (dx, w) => dir > 0 ? x + dx : x + 13 - dx - w, ink = '#1a1020', body = '#2e4a7a', hood = '#3a5a90', trim = '#e8e0f0';
+  for (const wx of [2.5, 10]){ k.circle(M(wx, 0), gy - 1.6, 1.6, ink); k.rect(M(wx - .25, .5), gy - 1.85, .5, .5, '#9a9aaa'); }
+  k.rect(M(2, 9), gy - 3.5, 9, .5, ink);
+  k.rect(M(1, 11), gy - 8.5 + bob, 11, 5, ink);
+  k.rect(M(1.5, 10), gy - 8 + bob, 10, 4, body);
+  k.rect(M(1.5, 10), gy - 8 + bob, 10, .5, trim);
+  for (let r = 0; r < 5; r++){ const w = Math.sqrt(25 - (5 - r) ** 2) * .9 + .5; k.rect(M(1.5, w), gy - 13 + r + bob, w, 1, r ? hood : trim); }
+  for (let i = 0; i < 4; i++) k.rect(M(-i * .8, .8), gy - 8.5 - i * .5 + bob, .8, .8, ink);
+}
+// a golden dog at a trot, 14 wide
+function drawDog(k, x, gy, dir, phase){
+  const M = (dx, w) => dir > 0 ? x + dx : x + 14 - dx - w, ink = '#1a1020', fur = '#c8803a', dark = '#8a5020', light = '#e8a85a', s = Math.sin(phase);
+  for (const [lx, sw] of [[3, s], [4.5, -s], [9, -s], [10.5, s]]) k.rect(M(lx + sw * .6, 1), gy - 3, 1, 3, dark);
+  k.rect(M(.5, 1), gy - 9 + Math.sin(phase * 2) * .7, 1, 2.5, fur);
+  k.rect(M(1.5, 10), gy - 7, 10, 4.5, ink); k.rect(M(2, 9), gy - 6.5, 9, 3.5, fur);
+  k.rect(M(2, 9), gy - 6.5, 9, .5, light); k.rect(M(2.5, 7), gy - 3.5, 7, .5, dark);
+  k.rect(M(9, 4.5), gy - 9.5, 4.5, 4, ink); k.rect(M(9.5, 3.5), gy - 9, 3.5, 3, fur); k.rect(M(12.5, 1.5), gy - 8, 1.5, 1.5, fur);
+  k.rect(M(13.5, .5), gy - 8, .5, .5, ink); k.rect(M(11, .5), gy - 8.5, .5, .5, ink); k.rect(M(9.5, 1), gy - 10, 1, 2, dark);
+}
+function newWalker(i, again){
+  const kind = ['stroller', 'dog', 'jogger'][i], dir = Math.random() < .5 ? 1 : -1;
+  const away = (again ? 120 : 30) + Math.random() * 240 + i * 90;
+  return {i, kind, dir, x: dir > 0 ? -40 - away : SW + 40 + away, speed: {stroller: 8, dog: 11, jogger: 26}[kind], gy: [133, 134.5, 132][i], d: 0};
+}
+function parkFolk(k, t, dt){
+  const folk = drifting('parkFolk', 3, i => newWalker(i));
+  for (const w of folk){
+    w.x += w.dir * w.speed * dt; w.d += w.speed * dt;
+    if (w.dir > 0 ? w.x > SW + 60 : w.x < -60) Object.assign(w, newWalker(w.i, true));
+  }
+  for (const w of [...folk].sort((a, b) => a.gy - b.gy)){
+    if (w.x < -50 || w.x > SW + 50) continue;
+    const frame = Math.floor(w.d / (w.kind === 'jogger' ? 4 : 3)) % 2;
+    k.rect(w.x + 2, w.gy - .5, 8, .5, 'rgba(60,40,20,.25)');
+    if (w.kind === 'stroller'){
+      drawPram(k, w.dir > 0 ? w.x + 12 : w.x - 14, w.gy, w.dir, frame ? .5 : 0);
+      drawFolk(k, FOLK.lady, w.x, w.gy, w.dir, frame);
+      k.rect(w.dir > 0 ? w.x + 9 : w.x + .5, w.gy - 9.5, 2.5, 1, FOLK.lady.colors.o);
+    } else if (w.kind === 'dog'){
+      const dx = w.dir > 0 ? w.x + 17 : w.x - 19, hx = w.dir > 0 ? w.x + 10 : w.x + 2, cx = w.dir > 0 ? dx + 10 : dx + 4;
+      drawDog(k, dx, w.gy + .5, w.dir, w.d * .9);
+      for (let j = 0; j <= 10; j++){ const tt = j / 10; k.rect(hx + (cx - hx) * tt, w.gy - 7 + (-.5) * tt + Math.sin(Math.PI * tt) * 1.5, .5, .5, '#c2334d'); }
+      drawFolk(k, FOLK.walker, w.x, w.gy, w.dir, frame);
+    } else drawFolk(k, FOLK.runner, w.x, w.gy, w.dir, frame, frame ? .5 : 0);
+  }
+}
+
+// ---- bees and butterflies working the garden ----
+const GARDEN_SPOTS = [
+  ...[20, 34, 48, 62, 76, 92].map(x => ({x, y: 69})),             // sunflower heads
+  ...[124, 140, 158, 176, 196, 214, 232].map(x => ({x, y: 89})),  // roses on the fence
+  ...[104, 118, 132, 170, 188, 206, 236].map(x => ({x, y: 101})), // the cottage border
+  ...[228, 234, 240].map(x => ({x, y: 97})),                      // lavender
+];
+const spotNear = () => GARDEN_SPOTS[Math.floor(Math.random() * GARDEN_SPOTS.length)];
+function gardenBugs(k, t, dt){
+  // bees dart from flower to flower and hover while they work it
+  for (const b of drifting('bees', 6, i => ({x: 40 + i * 40, y: 80, tx: 40 + i * 40, ty: 80, wait: Math.random() * 2, p: i * 2.3}))){
+    b.wait -= dt;
+    if (b.wait <= 0){ const sp = spotNear(); b.tx = sp.x; b.ty = sp.y - 2; b.wait = 1.5 + Math.random() * 3; }
+    b.x += (b.tx - b.x) * Math.min(1, dt * 1.8) + Math.sin(t * 13 + b.p) * .3;
+    b.y += (b.ty - b.y) * Math.min(1, dt * 1.8) + Math.cos(t * 11 + b.p * 2) * .25;
+    if (Math.floor(t * 30 + b.p) % 2) k.rect(b.x - .25, b.y - 1.5, 1.5, 1, 'rgba(255,255,255,.8)');
+    k.rect(b.x - .5, b.y - .5, 2, 1.5, '#f5c542'); k.rect(b.x + .25, b.y - .5, .5, 1.5, '#2a1a10'); k.rect(b.x + 1.5, b.y, .5, .5, '#2a1a10');
+  }
+  // butterflies wander, then drift down onto a flower and rest with slow wingbeats
+  const colors = ['#f08a3a', '#f6f2ea', '#7ab8f0', '#f5c542', '#ec8ac0', '#b890f0'];
+  for (const f of drifting('flutter', 6, i => ({x: 20 + i * 50, y: 45 + (i % 3) * 18, p: i * 1.7, c: colors[i], mode: 'wander', rest: 0, tx: 0, ty: 0}))){
+    if (f.mode === 'wander'){
+      const ang = vnoise(t * .35 + f.p * 10, f.p, 1, 3) * Math.PI * 4;
+      f.x += Math.cos(ang) * 14 * dt; f.y += Math.sin(ang) * 9 * dt + Math.sin(t * 6 + f.p) * .2;
+      if (f.x < -8) f.x = SW + 6; if (f.x > SW + 8) f.x = -6;
+      f.y = clamp(f.y, 28, 118);
+      if (Math.random() < dt * .12){ const sp = spotNear(); f.tx = sp.x; f.ty = sp.y - 1.5; f.mode = 'land'; }
+    } else if (f.mode === 'land'){
+      const dx = f.tx - f.x, dy = f.ty - f.y, dist = Math.hypot(dx, dy) || 1;
+      f.x += dx / dist * Math.min(dist, 18 * dt); f.y += dy / dist * Math.min(dist, 18 * dt) + Math.sin(t * 6 + f.p) * .15;
+      if (dist < 1){ f.mode = 'rest'; f.rest = 2 + Math.random() * 3; }
+    } else if ((f.rest -= dt) <= 0) f.mode = 'wander';
+    const open = Math.floor(t * (f.mode === 'rest' ? 1.5 : 9) + f.p) % 2;
+    k.sprite(BUTTERFLY[open ? 0 : 1], {w: f.c, k: '#2a1a1a'}, f.x - 2.5, f.y - 1.5);
+  }
+}
 
 const PLACE_BG = {};
 const pst = {};
@@ -2473,17 +2602,30 @@ const PLACES = {
       wrapDraw(g, L.far, sc * .04);
       wrapDraw(g, L.mid, sc * .08);
       const ko = wrapDraw(g, L.keep, sc * .18), KW = L.keep.width;
+      // windows are lit and put out one at a time, slowly, the way candles and lamps would be
+      const lights = drifting('keepLights', KEEP_WINDOWS.length, i => {
+        const on = Math.random() < .72;
+        return {on, lvl: on ? 1 : 0, next: 10 + Math.random() * 200, warm: KEEP_WINDOWS[i].seed > .62 ? 1 : 0};
+      });
+      for (const l of lights){
+        l.next -= dt;
+        if (l.next <= 0){ l.on = !l.on; l.next = l.on ? 120 + Math.random() * 180 : 40 + Math.random() * 80; }
+        l.lvl += ((l.on ? 1 : 0) - l.lvl) * Math.min(1, dt * (l.on ? .9 : .6));
+      }
       for (let base = ko; base < DW; base += KW){
-        for (const w of KEEP_WINDOWS){
-          const X = base + Math.round(w.x * HD);
-          if (X < -10 || X > DW + 10 || Math.sin(t * .7 + w.seed * 40) <= -.4) continue;
-          const warm = w.seed > .5 + beat * .3 ? 1 : 0;
-          k.glow(X / HD + 1.25, w.y + 2, 5, warm ? '#ff8a3a' : '#ffc060', .28 + beat * .12);
-          g.drawImage(L.lit[warm], X, Math.round(w.y * HD));
-        }
+        KEEP_WINDOWS.forEach((w, i) => {
+          const l = lights[i], X = base + Math.round(w.x * HD);
+          if (l.lvl < .02 || X < -10 || X > DW + 10) return;
+          // a slow candle waver, a little stronger while the flame is still catching
+          const waver = 1 + (vnoise(t * 2.2, i * 3.7, 1, 41) - .5) * (l.on && l.lvl < .9 ? .8 : .3);
+          k.glow(X / HD + 1.25, w.y + 2, 5, l.warm ? '#ff8a3a' : '#ffc060', .26 * l.lvl * waver);
+          g.globalAlpha = Math.min(1, l.lvl * waver);
+          g.drawImage(L.lit[l.warm], X, Math.round(w.y * HD));
+          g.globalAlpha = 1;
+        });
         for (const r of KEEP_ROSE){
           const X = base + Math.round(r.x * HD);
-          if (X > -40 && X < DW + 40) k.glow(X / HD, r.y, 14, '#ffb050', .3 + beat * .25);
+          if (X > -40 && X < DW + 40) k.glow(X / HD, r.y, 14, '#ffb050', .3 + .04 * Math.sin(t * 1.3));
         }
         for (const f of KEEP_FLAGS){
           const X = base + Math.round(f.x * HD), Y = Math.round(f.y * HD);
@@ -2645,17 +2787,19 @@ const PLACES = {
       p.rect(77, obsY - 16, .5, 6, '#3a3a4e'); p.rect(77.5, obsY - 16, 3, 2, '#d04050');
       p.canopy(150, 90, 20, 6, ['#3a6a68','#4a7c70','#5e9078','#78a882','#98c090'], 21);
       p.hill(x => 100 - 5 * Math.sin(x * .02 + 3) - 2 * Math.sin(x * .07), R_GRASS, 4, {blades:true, depth:24});
-      p.trunk(252, 112, 30, R_WOOD, 2); p.canopy(252, 74, 28, 19, R_BLOSS, 5);
-      p.trunk(30, 112, 24, R_WOOD, 3); p.canopy(30, 80, 22, 17, R_LEAF, 6);
-      p.trunk(110, 108, 16, R_WOOD, 4); p.canopy(110, 88, 14, 11, R_LEAF, 7);
-      p.trunk(304, 112, 18, R_WOOD, 5); p.canopy(306, 88, 17, 14, R_LEAF, 8);
+      p.tree(110, 108, {h: 14, rx: 14, ry: 11, leaf: R_LEAF, seed: 7, w: 1.8});
+      p.tree(304, 112, {h: 17, rx: 18, ry: 14, leaf: R_LEAF, seed: 8, w: 2, lean: 2});
+      p.tree(30, 112, {h: 21, rx: 23, ry: 17, leaf: R_LEAF, seed: 6, w: 2.6, lean: 1, branches: 4});
+      p.tree(252, 112, {h: 25, rx: 28, ry: 18, leaf: R_BLOSS, seed: 5, w: 2.8, lean: -2, branches: 4});
+      const pr = mulberry32(77); // loose blossoms catching the light
+      for (let i = 0; i < 70; i++){ const a = pr() * Math.PI * 2, rr = Math.sqrt(pr()); p.dot(250 + Math.cos(a) * rr * 25, 75 + Math.sin(a) * rr * 14, pr() < .5 ? '#fff0f4' : '#ffd0dc'); }
       p.ground(110, R_GRASS, 9, {flowers:['#ffffff','#f5c542','#ec8ac0'], count:18});
       p.texture(0, 126, SW, 9, ['#9a7a50','#b49264','#ccac7c','#e0c492','#eed8aa'], 4, 10, .1);
       p.rect(0, 126, SW, .5, '#7a6a40'); p.rect(0, 134.5, SW, .5, '#8a7046');
       const r = mulberry32(13);
       for (let i = 0; i < 40; i++){ const x = r() * SW, y = 127 + r() * 7; p.rect(x, y, 1, .5, '#8a7a5a'); p.dot(x, y, '#f4e4c0'); }
       for (let X = 0; X < DW; X++) if (hash2(X, 9, 9) < .45){ const bh = 1 + Math.floor(hash2(X, 8, 9) * 3); for (let j = 0; j < bh; j++) p.put(X, 126 * HD + j, rgb('#6caa44')); }
-      p.canopy(78, 112, 12, 5, R_LEAF, 14); p.canopy(226, 113, 10, 4, R_LEAF, 15);
+      p.canopy(78, 112, 12, 5, R_LEAF, 14, {flat: .35}); p.canopy(226, 113, 10, 4, R_LEAF, 15, {flat: .35});
       p.ellipse(165, 127, 30, 2, 'rgba(20,50,20,.4)');
       p.box(142, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']); p.box(186, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']);
       p.wood(138, 114.5, 54, 2, R_WOODL, 16); p.wood(138, 116.5, 54, 1.5, R_WOOD, 17);
@@ -2685,6 +2829,7 @@ const PLACES = {
       });
       [228, 246].forEach((x, i) => k.sprite(PIGEON[scene.beat > .5 && i === scene.step % 2 ? 1 : 0], {g:'#8a8aa0', k:'#e04040', r:'#d0702a'}, x, 127));
       sitHero(k, 152, 115);
+      parkFolk(k, t, dt);
       outdoorRain(k, dt, 'park');
     },
   },
@@ -2848,10 +2993,9 @@ const PLACES = {
         p.rect(x + .5, 74.5, 4, 1.5, '#d4ae80'); p.rect(x + 1.5, 73.5, 2, 1, '#ead0a4');
       }
       p.wood(0, 82, SW, 2, ['#5a3e26','#7a5a3a','#9a7650'], 23); p.wood(0, 98, SW, 2, ['#5a3e26','#7a5a3a','#9a7650'], 24);
-      for (let x = 120; x < 236; x += 9 + Math.floor(r() * 6)){
-        p.canopy(x, 86 + r() * 8, 5, 4, R_LEAF, x);
-        for (let i = 0; i < 3; i++) p.circle(x - 3 + r() * 6, 84 + r() * 10, 1, r() < .5 ? '#e86a8a' : '#f4a0b8');
-      }
+      // a climbing rose along the fence: one hedge with blooms scattered through it
+      p.canopy(178, 91, 60, 7, R_LEAF, 61, {flat: .55, lightX: .12});
+      for (let i = 0; i < 46; i++){ const x = 122 + r() * 112, y = 86 + r() * 10; p.circle(x, y, 1, r() < .5 ? '#e86a8a' : '#f4a0b8'); p.dot(x - .5, y - .5, '#ffd8e4'); }
       p.wood(252, 52, 56, 56, ['#4a2418','#6a3424','#8a4e3a','#a86a4e','#c48864'], 25, true);
       for (let x = 256; x < 308; x += 6) p.rect(x, 52, .5, 56, '#3a1c12');
       for (let i = 0; i < 16; i++){
@@ -2862,7 +3006,17 @@ const PLACES = {
       p.box(291, 63, 12, 12, ['#3a1c12','#5a2e20','#7a4430']); p.sky(['#9ccaee','#cfe6f2'], 64, 74, 292, 10);
       p.rect(296.5, 64, 1, 10, '#5a2e20'); p.rect(292, 68.5, 10, 1, '#5a2e20');
       p.wood(290, 75, 14, 3, R_WOODL, 27); [292, 296, 300].forEach(x => p.circle(x, 74, 1.5, '#ec5a7a'));
-      p.ground(106, R_GRASS, 31, {flowers:['#ffffff','#f5c542','#c890f0'], count:20});
+      p.ground(106, R_GRASS, 31, {flowers:['#ffffff','#f5c542','#c890f0','#ec6a9a'], count:30});
+      // a cottage border along the bottom of the fence: tulips, daisies and cosmos
+      const fr = mulberry32(51);
+      for (let x = 100; x < 248; x += 3 + fr() * 3){
+        const kind = fr(), stem = 3 + fr() * 4, y = 108 + fr() * 2;
+        p.rect(x, y - stem, .5, stem, '#3f7a3a');
+        if (fr() < .5) p.rect(x - 1, y - stem * .5, 1, .5, '#5a9a42');
+        if (kind < .35){ p.rect(x - .5, y - stem - 2, 1.5, 2, ['#e0402a','#f5c542','#ec6a9a','#f08a3a'][Math.floor(fr() * 4)]); p.dot(x - .5, y - stem - 2, '#ffffff'); }
+        else if (kind < .7){ p.rect(x - 1, y - stem - .5, 2.5, .5, '#f6f2ea'); p.rect(x - .25, y - stem - 1.5, .5, 2.5, '#f6f2ea'); p.dot(x, y - stem - .5, '#f5c542'); }
+        else { p.circle(x, y - stem - 1, 1, ['#c890f0','#ec8ac0','#ffffff'][Math.floor(fr() * 3)]); p.dot(x, y - stem - 1, '#f5c542'); }
+      }
       for (let i = 0; i < 18; i++){
         const x = 224 + i + Math.sin(i * 2.3) * 1.5, top = 96 + (i % 4) * 1.5;
         p.rect(x, top + 4, .5, 108 - top - 4, '#4a7a3a');
@@ -2895,11 +3049,8 @@ const PLACES = {
         if (i % 3 === 0){ k.rect(x - .5, 123 - h - 1.5, 1.5, 1.5, '#e0402a'); k.dot(x - .5, 123 - h - 1.5, '#ff9a80'); }
       });
       sp.slice(12).forEach((v, i) => { const r = 2 + v * 3; k.circle(206 + i * 11, 138, r, '#4a9a3a'); k.circle(205.5 + i * 11, 137.5, r * .6, '#7ac85a'); });
-      for (const b of drifting('bf', 3, i => ({x: 60 + i * 80, y: 60 + i * 10, p: i * 2, c: ['#f0a0d0','#f5c542','#a0c8f0'][i]}))){
-        b.x += Math.cos(t * .6 + b.p) * 10 * dt; b.y += Math.sin(t * 1.1 + b.p) * 8 * dt;
-        k.sprite(BUTTERFLY[Math.floor(t * 8 + b.p) % 2], {w: b.c, k:'#2a1a1a'}, b.x - 2.5, b.y - 1.5);
-      }
       sitHero(k, 140, 111.5);
+      gardenBugs(k, t, dt);
       outdoorRain(k, dt, 'garden');
     },
   },
