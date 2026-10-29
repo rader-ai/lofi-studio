@@ -1,5 +1,7 @@
 # Lofi Studio
 
+**Live: [lofi-studio-one.vercel.app](https://lofi-studio-one.vercel.app)** · cozy beats for tiny pixel worlds
+
 A lo-fi music studio that runs entirely in your browser. You pick a vibe and it plays, styled as a pixel-art castle.
 
 Open `index.html` in a browser. There's nothing to install. Audio is generated live with [Tone.js](https://tonejs.github.io/).
@@ -33,3 +35,7 @@ Each track is a fixed recipe and seed, so it plays the same song every time. Alb
 ## Your own sounds
 
 Drop audio files onto the page to use them as melody or beat loops (stretched to fit the tempo), vocal chops that follow the chords, background textures, or replacement kick, snare and hi-hat sounds.
+
+## Credits
+
+Made by [Chris Rader](https://happyrader.com) ([@rader-ai](https://github.com/rader-ai)). Sound by [Tone.js](https://tonejs.github.io/); fonts are Press Start 2P and VT323.

@@ -3,7 +3,35 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Lofi Studio</title>
+<title>Lofi Studio · Make cozy lo-fi beats in your browser</title>
+<meta name="description" content="Pick a vibe and Lofi Studio brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Shape it, mix it, record it. Free, nothing to install.">
+<meta name="author" content="Chris Rader">
+<meta name="theme-color" content="#120c28">
+<link rel="canonical" href="https://lofi-studio-one.vercel.app/">
+<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<!-- link previews (Slack, iMessage, Discord, LinkedIn, X…) need absolute URLs -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lofi Studio">
+<meta property="og:url" content="https://lofi-studio-one.vercel.app/">
+<meta property="og:title" content="Lofi Studio · cozy beats for tiny pixel worlds">
+<meta property="og:description" content="Pick a vibe and it brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Seven albums to explore. Free, nothing to install.">
+<meta property="og:image" content="https://lofi-studio-one.vercel.app/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Lofi Studio: a pixel-art castle at night with a guy in a hoodie and headphones walking the battlements">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Lofi Studio · cozy beats for tiny pixel worlds">
+<meta name="twitter:description" content="Pick a vibe and it brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Seven albums to explore. Free, nothing to install.">
+<meta name="twitter:image" content="https://lofi-studio-one.vercel.app/og.png">
+<meta name="twitter:image:alt" content="Lofi Studio: a pixel-art castle at night with a guy in a hoodie and headphones walking the battlements">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"Lofi Studio","url":"https://lofi-studio-one.vercel.app/","image":"https://lofi-studio-one.vercel.app/og.png",
+ "description":"Pick a vibe and Lofi Studio brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Shape it, mix it, record it. Free, nothing to install.","applicationCategory":"MultimediaApplication","operatingSystem":"Any (runs in the browser)",
+ "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
+ "author":{"@type":"Person","name":"Chris Rader","url":"https://happyrader.com","sameAs":["https://github.com/rader-ai"]}}
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,7 +67,9 @@
   h1{margin:0;font:24px/1 var(--pixel);text-shadow:3px 3px 0 var(--ink), 6px 6px 0 #3b2a7a;letter-spacing:2px}
   h1 .gold{color:var(--gold);animation:shimmer 3s steps(1) infinite}
   h1 .ch{display:inline-block;white-space:pre;animation:wave .45s steps(3) both;animation-delay:calc(.35s + var(--i) * 45ms)}
-  header p{margin:0;color:var(--muted);flex:1}
+  .brand{flex:1 1 auto;display:flex;flex-direction:column;gap:10px;min-width:0}
+  header p{margin:0;color:var(--muted)}
+  .head-actions{display:flex;gap:14px;flex-wrap:wrap;padding-left:4px}
   @keyframes shimmer{0%,92%{color:var(--gold)} 94%{color:#fff3c4} 96%{color:var(--torch2)}}
 
   .layout{max-width:1180px;margin:0 auto;padding:16px 16px 130px;display:grid;gap:24px;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);align-items:start}
@@ -245,13 +275,29 @@
   .pb-actions{display:flex;gap:14px}
 
   dialog{
-    max-width:560px;color:var(--text);background:var(--stone);border:4px solid var(--edge);
+    max-width:min(560px, calc(100vw - 40px));color:var(--text);background:var(--stone);border:4px solid var(--edge);
     box-shadow:0 0 0 4px var(--ink), 12px 12px 0 4px rgba(0,0,0,.6);padding:24px;font:22px/1.2 var(--body)
   }
   dialog::backdrop{background:rgba(7,4,15,.75)}
   dialog h2{font:13px var(--pixel);color:var(--gold);margin:0 0 14px}
   dialog li{margin:8px 0}
   dialog b{color:var(--gold);font-weight:normal}
+  dialog a{color:var(--gold)}
+  .creator{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start;margin:18px 0;padding:16px;background:var(--ink);box-shadow:0 0 0 2px var(--stone2)}
+  .creator img{display:block;width:80px;height:80px;box-shadow:0 0 0 3px var(--ink),0 0 0 6px var(--gold)}
+  .creator h3{margin:2px 0 8px;font:11px/1.5 var(--pixel);color:var(--gold)}
+  .creator p{margin:0 0 12px}
+  .links{display:flex;flex-wrap:wrap;gap:12px;padding-left:3px}
+  .links a{font:8px/1.2 var(--pixel);color:var(--text);text-decoration:none;background:var(--stone2);padding:10px 11px;
+    box-shadow:0 0 0 3px var(--ink), inset -3px -3px 0 rgba(0,0,0,.4), inset 3px 3px 0 rgba(255,255,255,.14);
+    transition:transform .14s var(--ease), background-color .18s}
+  .links a.primary{background:var(--torch);color:var(--ink)}
+  .links a:focus-visible{outline:3px solid var(--gold);outline-offset:4px}
+  @media (hover:hover) and (pointer:fine){ .links a:hover{transform:translateY(-2px);background-color:#3b2e78} .links a.primary:hover{background-color:#ff8445} }
+  .small{color:var(--muted);font-size:19px}
+  footer.credit{grid-column:1 / -1;text-align:center;color:var(--muted);font-size:19px}
+  footer.credit a{color:var(--gold)}
+  @media (max-width:520px){ .creator{grid-template-columns:1fr} }
 
   @media (max-width:900px){
     .layout{grid-template-columns:minmax(0,1fr)}
@@ -361,9 +407,14 @@
 </head>
 <body>
 <header>
-  <h1>LOFI <span class="gold">STUDIO</span></h1>
-  <p>~ a castle of quiet beats ~</p>
-  <button id="helpBtn" class="ghost">? HOW IT WORKS</button>
+  <div class="brand">
+    <h1>LOFI <span class="gold">STUDIO</span></h1>
+    <p>~ cozy beats for tiny pixel worlds ~</p>
+  </div>
+  <div class="head-actions">
+    <button id="aboutBtn" class="ghost">♥ ABOUT</button>
+    <button id="helpBtn" class="ghost">? HOW IT WORKS</button>
+  </div>
 </header>
 
 <main class="layout">
@@ -458,6 +509,10 @@
     </div>
     <div id="albumsView" class="view" hidden></div>
   </div>
+  <footer class="credit">
+    Made by <a href="https://happyrader.com" target="_blank" rel="noopener">Chris Rader</a>
+    · <a href="https://github.com/rader-ai/lofi-studio" target="_blank" rel="noopener">source on GitHub</a>
+  </footer>
 </main>
 
 <div class="playerbar" role="region" aria-label="Player">
@@ -484,6 +539,25 @@
      Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
   <p>Optional: open <b>Add your own sounds</b> to drop in your own audio, or <b>Fine-tune</b> for musical details. Under the scene, <b>Character</b> picks who appears.</p>
   <button id="helpClose" class="primary">GOT IT</button>
+</dialog>
+
+<dialog id="about" aria-labelledby="aboutTitle">
+  <h2 id="aboutTitle">About Lofi Studio</h2>
+  <p>Pick a vibe and Lofi Studio brews a lo-fi beat live in your browser, then plays it in a tiny pixel world. Every sound and every scene is generated in code: no sample library, no AI model, nothing to install.</p>
+  <div class="creator">
+    <img src="https://github.com/rader-ai.png?size=160" alt="Chris Rader" width="80" height="80" loading="lazy">
+    <div>
+      <h3>Made by Chris Rader</h3>
+      <p>Product manager. I build tools that help people do their jobs better, lately with AI and always with a person in charge.</p>
+      <div class="links">
+        <a class="primary" href="https://github.com/rader-ai/lofi-studio" target="_blank" rel="noopener">SOURCE ON GITHUB</a>
+        <a href="https://github.com/rader-ai" target="_blank" rel="noopener">@RADER-AI</a>
+        <a href="https://happyrader.com" target="_blank" rel="noopener">HAPPYRADER.COM</a>
+      </div>
+    </div>
+  </div>
+  <p class="small">Built with coding agents and a lot of coffee. Sound by <a href="https://tonejs.github.io/" target="_blank" rel="noopener">Tone.js</a>; fonts are Press Start 2P and VT323.</p>
+  <button id="aboutClose" class="primary">CLOSE</button>
 </dialog>
 
 <script>
@@ -1345,6 +1419,12 @@ function buildUI(){
 
   $('helpBtn').addEventListener('click', () => $('help').showModal());
   $('helpClose').addEventListener('click', () => $('help').close());
+  $('aboutBtn').addEventListener('click', () => $('about').showModal());
+  $('aboutClose').addEventListener('click', () => $('about').close());
+  for (const d of [$('help'), $('about')]) d.addEventListener('click', e => {
+    const r = d.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close();
+  });
 }
 
 function loadState(){
