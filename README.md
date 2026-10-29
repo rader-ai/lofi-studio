@@ -14,7 +14,7 @@ Open `index.html` in a browser. There's nothing to install. Audio is generated l
 
 ## Albums
 
-There are seven finished albums. Each one is set in its own animated pixel scene, and its cover art is painted from that scene (you can download it as a 1200×1200 PNG):
+There are seven finished albums, browsed in a swipeable carousel where the highlighted cover plays its scene live. Each album is set in its own animated hi-bit pixel scene, and its cover art is cropped from that scene (you can download it as a 1200×1200 PNG):
 
 | Album | Scene |
 |---|---|
