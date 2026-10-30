@@ -2,11 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Lofi Studio · Make cozy lo-fi beats in your browser</title>
 <meta name="description" content="Pick a vibe and Lofi Studio brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Shape it, mix it, record it. Free, nothing to install.">
 <meta name="author" content="Chris Rader">
-<meta name="theme-color" content="#120c28">
+<meta name="theme-color" content="#07040f">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Lofi Studio">
 <link rel="canonical" href="https://lofi-studio-one.vercel.app/">
 <link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -32,11 +37,59 @@
  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
  "author":{"@type":"Person","name":"Chris Rader","url":"https://happyrader.com","sameAs":["https://github.com/rader-ai"]}}
 </script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<script>
+  // Before the first paint: hold the studio's intro animations until the splash opens, and
+  // on iPhone Safari leave room under the player for the toolbar that floats over the
+  // bottom of the page (only when the page really runs down behind it).
+  (function(){
+    var d = document.documentElement, ua = navigator.userAgent;
+    d.classList.add('booting');
+    var safari = /iP(hone|od)/.test(ua) && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
+    var standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+    function bleed(){
+      var under = safari && !standalone && innerHeight > innerWidth && screen.height - innerHeight < 80;
+      d.style.setProperty('--bleed', under ? '72px' : '0px');
+    }
+    bleed(); addEventListener('resize', bleed);
+  })();
+</script>
+<script id="toneJs" src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js" defer></script>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link id="fontCss" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet"><style>#splash{display:none}</style></noscript>
 <style>
+  /* ---------- splash ----------
+     Painted from the very first byte, with nothing to download: a night sky, the logo in
+     pixel letters, a progress bar and a status line. When the studio is ready an iris opens
+     from the middle and the studio rises into place behind it. */
+  #splash{position:fixed;inset:0;z-index:200;display:grid;place-items:center;overflow:hidden;background-color:#07040f;
+    background-image:radial-gradient(ellipse 70% 60% at 50% 44%, #261c52 0, #150e30 55%, #07040f 100%);
+    --r:0px;-webkit-mask:radial-gradient(circle at 50% 44%, transparent var(--r), #000 calc(var(--r) + .5px));
+    mask:radial-gradient(circle at 50% 44%, transparent var(--r), #000 calc(var(--r) + .5px))}
+  .sp-stars,.sp-stars::after{content:"";position:absolute;left:0;top:0;width:2px;height:2px;border-radius:0}
+  .sp-stars{box-shadow:33.1vw 16.2vh 0 #7a7eb8,9.0vw 52.4vh 0 #c4c8f0,7.6vw 49.7vh 0 #c4c8f0,43.6vw 8.6vh 0 #c4c8f0,42.8vw 79.7vh 0 #c4c8f0,23.4vw 61.0vh 0 #7a7eb8,57.4vw 39.3vh 0 #7a7eb8,6.5vw 82.7vh 0 #c4c8f0,15.8vw 13.1vh 0 #c4c8f0,80.3vw 19.0vh 0 #c4c8f0,63.3vw 37.0vh 0 #c4c8f0,8.0vw 7.6vh 0 #c4c8f0,67.3vw 42.2vh 0 #c4c8f0,58.2vw 44.6vh 0 #c4c8f0,78.3vw 67.7vh 0 #c4c8f0,57.1vw 51.4vh 0 #7a7eb8,72.0vw 29.1vh 0 #7a7eb8,13.3vw 41.3vh 0 #7a7eb8,16.6vw 48.0vh 0 #c4c8f0,66.1vw 73.9vh 0 #c4c8f0,86.0vw 31.5vh 0 #7a7eb8,59.1vw 56.5vh 0 #c4c8f0,82.6vw 90.8vh 0 #c4c8f0,65.8vw 7.7vh 0 #7a7eb8,64.1vw 95.4vh 0 #7a7eb8,29.3vw 38.3vh 0 #7a7eb8,4.2vw 45.4vh 0 #c4c8f0,13.2vw 7.5vh 0 #7a7eb8,14.4vw 25.3vh 0 #c4c8f0,85.7vw 9.6vh 0 #c4c8f0,54.7vw 85.0vh 0 #7a7eb8,84.9vw 28.2vh 0 #c4c8f0,36.4vw 85.1vh 0 #7a7eb8,16.5vw 18.6vh 0 #c4c8f0,24.4vw 47.6vh 0 #c4c8f0,27.2vw 2.4vh 0 #c4c8f0,37.4vw 55.2vh 0 #7a7eb8,68.3vw 50.5vh 0 #7a7eb8,66.9vw 7.1vh 0 #7a7eb8,76.9vw 84.2vh 0 #7a7eb8,39.7vw 39.5vh 0 #c4c8f0,62.9vw 7.9vh 0 #c4c8f0,22.0vw 17.3vh 0 #c4c8f0,7.0vw 2.0vh 0 #c4c8f0,11.7vw 36.2vh 0 #c4c8f0,85.9vw 59.7vh 0 #c4c8f0}
+  .sp-stars::after{box-shadow:26.2vw 34.7vh 0 #ffffff,13.8vw 81.8vh 0 #c4c8f0,48.4vw 10.1vh 0 #ffffff,34.9vw 26.9vh 0 #c4c8f0,4.2vw 91.4vh 0 #c4c8f0,54.1vw 4.5vh 0 #7a7eb8,84.9vw 67.4vh 0 #ffffff,37.2vw 17.7vh 0 #c4c8f0,76.8vw 33.0vh 0 #ffffff,79.9vw 94.6vh 0 #7a7eb8,80.6vw 71.5vh 0 #ffffff,51.7vw 35.4vh 0 #ffffff,4.7vw 28.3vh 0 #ffffff,68.5vw 91.9vh 0 #ffffff,92.0vw 94.9vh 0 #c4c8f0,23.2vw 23.3vh 0 #ffffff;animation:spTwinkle 2.6s steps(2) infinite}
+  .sp-mid{position:relative;display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;transition:transform .22s, opacity .22s}
+  .sp-logo{width:min(560px, 84vw);height:auto;display:block;overflow:visible}
+  .sp-logo .a{fill:#ece6ff} .sp-logo .b{fill:#f5c542} .sp-logo .s1{fill:#07040f} .sp-logo .s2{fill:#3b2a7a}
+  .sp-logo .lt{animation:spWave 2.4s steps(1) infinite;animation-delay:calc(var(--i) * 90ms)}
+  .sp-tag{margin:0;font:20px/1 VT323, ui-monospace, Menlo, monospace;color:#a79dd6;letter-spacing:1px}
+  .sp-load{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:18px}
+  .sp-bar{width:min(300px, 66vw);height:18px;padding:3px;background:#07040f;box-shadow:0 0 0 3px #5b4a9e, 0 0 0 6px #07040f}
+  .sp-bar i{display:block;height:100%;width:calc(var(--p, 0) * 100%);background:repeating-linear-gradient(90deg,#f5c542 0 9px,#b8892a 9px 12px);transition:width .3s steps(4)}
+  .sp-row{display:flex;align-items:center;gap:10px;min-height:20px}
+  .sp-vinyl{width:16px;height:16px;flex:none;shape-rendering:crispEdges;animation:spSpin .8s steps(4) infinite}
+  .sp-msg{font:19px/1 VT323, ui-monospace, Menlo, monospace;color:#4fd1c5}
+  #splash.opening .sp-mid{transform:scale(1.06);opacity:0}
+  #splash.gone{opacity:0;transition:opacity .25s}
+  .booting .card,.booting h1 .ch{animation-play-state:paused}
+  @keyframes spWave{0%,9%{transform:translateY(-1px)}12%,100%{transform:none}}
+  @keyframes spSpin{to{transform:rotate(360deg)}}
+  @keyframes spTwinkle{50%{opacity:.15}}
+  @media (prefers-reduced-motion:reduce){ .sp-logo .lt,.sp-vinyl,.sp-stars::after{animation:none} }
+
   :root{
     --ink:#07040f; --night:#120c28; --stone:#1d1640; --stone2:#2a2058; --edge:#5b4a9e; --edge2:#8a78d6;
     --text:#ece6ff; --muted:#a79dd6; --gold:#f5c542; --gold2:#b8892a; --torch:#e8692c; --torch2:#ffb347;
@@ -68,11 +121,23 @@
      panel, then the player. Nothing scrolls. The scene is as big as the room allows at its
      320:150 shape; the panel shows one tab at a time and each tab lays itself out to fill
      the panel (and shrinks to fit if it ever runs short of room). */
-  :root{--side:16px; --gap:18px; --capH:74px; --padH:28px; --maxW:1800px}
+  :root{--side:16px; --gap:18px; --capH:74px; --padH:28px; --maxW:1800px;
+    /* the screen's safe areas (notch, home bar), plus room for iPhone Safari's floating toolbar */
+    --sa-t:env(safe-area-inset-top, 0px); --sa-l:env(safe-area-inset-left, 0px); --sa-r:env(safe-area-inset-right, 0px);
+    --sa-b:max(env(safe-area-inset-bottom, 0px), var(--bleed, 0px));
+    /* the bars run edge to edge; their contents line up with the studio's columns */
+    --edgeL:max(var(--side), calc((100vw - var(--maxW)) / 2 + var(--side)), var(--sa-l));
+    --edgeR:max(var(--side), calc((100vw - var(--maxW)) / 2 + var(--side)), var(--sa-r))}
+  html{background:var(--ink)}
   html,body{height:100%;overflow:hidden;overscroll-behavior:none}
-  body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100vh;height:100dvh}
+  body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);height:100vh;height:100dvh}
 
-  header{width:100%;max-width:var(--maxW);margin:0 auto;padding:16px var(--side) 2px;display:flex;align-items:center;gap:18px}
+  /* The top bar and the player are the same ink, edge to edge, and so are the strips Safari
+     reads to colour its status bar and toolbar, so the phone's own bars run straight into them. */
+  .edge{position:fixed;left:0;right:0;height:6px;background:var(--ink);z-index:100;pointer-events:none}
+  .edge.top{top:0} .edge.bottom{bottom:0}
+  header{position:relative;z-index:3;padding:calc(12px + var(--sa-t)) var(--edgeR) 12px var(--edgeL);display:flex;align-items:center;gap:18px;
+    background:var(--ink);border-bottom:4px solid var(--edge);box-shadow:0 4px 0 var(--ink), 0 10px 30px rgba(0,0,0,.45)}
   h1{margin:0;font:22px/1 var(--pixel);text-shadow:3px 3px 0 var(--ink), 6px 6px 0 #3b2a7a;letter-spacing:2px;white-space:nowrap}
   h1 .gold{color:var(--gold);animation:shimmer 3s steps(1) infinite}
   h1 .ch{display:inline-block;white-space:pre;animation:wave .45s steps(3) both;animation-delay:calc(.35s + var(--i) * 45ms)}
@@ -91,10 +156,14 @@
   /* in LED mode the record light stays on instead of blinking */
   .led button.rec.on{animation:none}
   @keyframes shimmer{0%,92%{color:var(--gold)} 94%{color:#fff3c4} 96%{color:var(--torch2)}}
+  /* narrower windows: the credit moves to the About box, then the header buttons go to icons */
+  @media (max-width:1180px){ .credit{display:none} }
+  @media (max-width:880px){ .head-actions .lbl{display:none} .head-actions{gap:12px} .head-actions button{padding-inline:11px} }
 
   /* side by side: the panel takes about a third of the width, the scene the rest (or less,
      when the window is short), and the panel is as tall as the scene card */
-  main.layout{container:main / size;width:100%;max-width:var(--maxW);margin:0 auto;min-height:0;padding:var(--gap) var(--side);
+  main.layout{container:main / size;width:100%;max-width:var(--maxW);margin:0 auto;min-height:0;
+    padding:var(--gap) max(var(--side), var(--sa-r)) var(--gap) max(var(--side), var(--sa-l));
     display:grid;grid-template-columns:auto auto;justify-content:center;align-content:center;align-items:center;gap:var(--gap);
     --pw:clamp(340px, 33cqw, 560px);
     --sceneW:min(100cqw - var(--pw) - var(--gap), (100cqh - var(--capH)) * 2.1333 + var(--padH))}
@@ -287,7 +356,8 @@
   @container pages (max-height:330px){ .sdesc{display:none} }
 
   /* ♫ albums: a carousel of covers (the highlighted one comes alive), then the tracks */
-  #albumsView{--cover:clamp(58px, 28cqh, 220px);gap:7px}
+  #albumsView{--cover:clamp(58px, 30cqh, 240px);gap:9px}
+  .al-top{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:7px}
   .carousel{position:relative;flex:1 1 auto;min-height:0;display:flex;align-items:center;margin:0 -12px}
   .car-track{flex:1 1 auto;min-width:0;display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:12px calc(50% - var(--cover) / 2 - 8px) 16px;
     scrollbar-width:none;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
@@ -308,15 +378,15 @@
   .car-dots button{width:12px;height:12px;padding:0;background:var(--stone2);box-shadow:0 0 0 2px var(--ink)}
   .car-dots button[aria-current=true]{background:var(--gold);width:24px}
   @media (hover:none){ .car-nav{display:none} }
-  #albumDetail{flex:none;display:flex;flex-direction:column;gap:9px}
-  .ad-info{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3px 14px;padding:0 3px}
+  .ad-info{flex:none;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:3px 14px;padding:0 3px}
   .ad-info h3{margin:0;font:11px/1.5 var(--pixel);color:var(--gold);text-shadow:2px 2px 0 var(--ink)}
   .ad-info .ds{grid-column:1;margin:0;color:var(--muted);font-size:18px}
   .ad-info .blurb{grid-column:1 / -1;margin:2px 0 0;font-size:18px;line-height:1.05}
   .ad-actions{grid-column:2;grid-row:1 / span 2;display:flex;gap:12px;padding:3px}
   .ad-actions button{padding:11px 12px}
-  .tracklist{list-style:none;margin:0;padding:3px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 10px}
-  .tracklist button{width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;text-align:left;font:18px/1 var(--body);padding:6px 8px}
+  .tracklist{list-style:none;margin:0;padding:3px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:1fr;gap:7px 10px}
+  .tracklist li{display:flex;min-width:0}
+  .tracklist button{flex:1 1 auto;width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;text-align:left;font:18px/1 var(--body);padding:6px 8px}
   .tracklist .no{font:9px var(--pixel);color:var(--muted);position:relative}
   .tracklist .tn{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .tracklist .tm{color:var(--muted)}
@@ -324,25 +394,26 @@
   .tracklist button.on .no,.tracklist button.on .tm{color:var(--ink)}
   @container pages (max-width:520px){ .tracklist .tm{display:none} .tracklist button{grid-template-columns:20px minmax(0,1fr);padding:5px 7px;font-size:17px} .ad-actions .lbl{display:none} .ad-actions button{padding:9px 11px} }
   @container pages (max-width:520px) and (min-height:290px){ .tracklist .tn{white-space:normal;line-height:1} }
+  @container pages (max-width:360px){ .tracklist{gap:6px 8px} .tracklist button{grid-template-columns:14px minmax(0,1fr);gap:5px;padding:4px 6px;font-size:16px} .tracklist .no{font-size:7px} .ad-info h3{font-size:10px} }
   @container pages (max-width:250px){ .tracklist{grid-template-columns:minmax(0,1fr);gap:4px} }
   @container pages (max-height:440px){ .ad-info .blurb,.car-dots{display:none} }
   @container pages (max-height:300px){ .ad-info .ds{display:none} .tracklist button{padding-block:4px} .car-track{padding-block:8px 10px} }
-  /* a short panel (a phone on its side, a small phone): the cover beside the tracks */
-  @container pages (max-height:250px){
-    #albumsView{--cover:clamp(56px, 40cqh, 120px);display:grid;grid-template-columns:calc(var(--cover) + 28px) minmax(0,1fr);gap:10px}
-    #albumsView .carousel{margin:0}
-    #albumsView .car-nav{padding:8px 5px}
-    #albumsView .car-nav.prev{left:0} #albumsView .car-nav.next{right:0}
-    #albumDetail{gap:6px;min-width:0}
-    .tracklist{grid-template-columns:minmax(0,1fr);gap:3px}
-    .tracklist button{padding:3px 7px;font-size:16px}
-    .ad-actions button{padding:7px 9px}
+  /* a short panel (a phone, a phone on its side): like a music app, the cover with the
+     title and buttons beside it, then the tracks underneath */
+  @container pages (max-height:360px){
+    #albumsView{--cover:clamp(56px, 27cqh, 132px);gap:8px}
+    .al-top{flex:none;flex-direction:row;align-items:center;gap:12px}
+    .al-top .carousel{flex:none;width:calc(var(--cover) + 28px);margin:0}
+    .al-top .car-nav{padding:8px 5px} .al-top .car-nav.prev{left:0} .al-top .car-nav.next{right:0}
+    .ad-info{flex:1 1 auto;min-width:0;grid-template-columns:minmax(0,1fr);align-content:center;gap:4px}
+    .ad-info h3{line-height:1.4}
+    .ad-actions{grid-column:1;grid-row:auto;padding:3px 3px 0}
   }
 
   /* sticky player */
   .playerbar{
     position:relative;z-index:40;display:flex;align-items:center;gap:18px;
-    padding:12px max(var(--side), calc((100vw - var(--maxW)) / 2 + var(--side)));
+    padding:12px var(--edgeR) calc(12px + var(--sa-b)) var(--edgeL);
     background:var(--ink);border-top:4px solid var(--edge);box-shadow:0 -4px 0 var(--ink), 0 -10px 30px rgba(0,0,0,.5)
   }
   button.big{font-size:13px;padding:15px 20px;min-width:140px}
@@ -379,7 +450,7 @@
   @media (max-aspect-ratio:1/1){
     :root{--side:10px; --gap:10px; --capH:56px; --padH:20px}
     body{font-size:20px}
-    header{padding:8px var(--side) 0;gap:12px}
+    header{padding:calc(7px + var(--sa-t)) var(--edgeR) 7px var(--edgeL);gap:12px}
     h1{font-size:14px;letter-spacing:1px;text-shadow:2px 2px 0 var(--ink), 4px 4px 0 #3b2a7a}
     .tagline,.credit{display:none}
     .brand{gap:0}
@@ -397,7 +468,7 @@
   /* short, wide windows (a phone on its side): everything a little tighter */
   @media (max-height:540px) and (min-aspect-ratio:1/1){
     :root{--gap:10px; --capH:56px; --padH:20px}
-    header{padding:7px var(--side) 0}
+    header{padding:calc(6px + var(--sa-t)) var(--edgeR) 6px var(--edgeL)}
     h1{font-size:13px;letter-spacing:1px;text-shadow:2px 2px 0 var(--ink), 4px 4px 0 #3b2a7a}
     .tagline{display:none}
     .brand{gap:0}
@@ -411,8 +482,8 @@
   }
   @media (max-height:420px) and (min-aspect-ratio:1/1){
     :root{--gap:8px}
-    header{padding:5px var(--side) 0}
-    main.layout{padding:6px var(--side)}
+    header{padding:calc(4px + var(--sa-t)) var(--edgeR) 4px var(--edgeL)}
+    main.layout{padding-block:6px}
     .tabs button{padding-block:8px}
   }
   /* small screens: icon buttons in the player and a smaller character switch */
@@ -421,7 +492,7 @@
     .who{gap:7px}
     .who button{padding:3px 5px}
     .who canvas{height:16px}
-    .playerbar{gap:10px;padding:6px var(--side)}
+    .playerbar{gap:10px;padding:6px var(--edgeR) calc(6px + var(--sa-b)) var(--edgeL)}
     .playerbar .lbl{display:none}
     button.big{min-width:0;width:52px;height:42px;padding:0;font-size:16px}
     .pb-actions{gap:12px}
@@ -437,6 +508,26 @@
     .links{gap:10px}
     .links a{font-size:7px;padding:8px 9px}
     .small{font-size:16px}
+  }
+  /* touch screens: everything you tap is at least finger-sized (about 44px) */
+  @media (pointer:coarse){
+    .head-actions button{height:40px;min-width:40px}
+    .tabs button{min-height:46px}
+    .tracklist button{min-height:44px}
+    .ad-actions button{min-width:44px;min-height:44px}
+    .row input,.row button{min-height:44px}
+    .who button{min-height:32px;min-width:40px}
+    button.big{min-height:48px}
+    .pb-actions button{min-height:48px;min-width:48px}
+    input[type=range]{height:16px}
+    input[type=range]::-webkit-slider-thumb{width:20px;height:32px}
+    input[type=range]::-moz-range-thumb{width:20px;height:32px}
+    .tile input[type=range]{height:14px}
+    .tile input[type=range]::-webkit-slider-thumb{width:18px;height:28px}
+  }
+  @media (pointer:coarse) and (max-aspect-ratio:1/1), (pointer:coarse) and (max-height:540px){
+    :root{--capH:64px}
+    .scene-caption{height:38px}
   }
   /* ---------- motion ----------
      Small, snappy and game-like. Hover effects only where a real pointer can hover,
@@ -479,10 +570,10 @@
   .tile button.pop{animation:tilepop .35s var(--ease)}
   .slide.active{animation:ring 2.6s ease-in-out infinite}
   .sample.new{animation:fadeUp .35s var(--ease) both}
-  #albumDetail.enter .ad-info,#albumDetail.enter .tracklist li{animation:fadeUp .4s var(--ease) both}
-  #albumDetail.enter .tracklist li:nth-child(2){animation-delay:.04s} #albumDetail.enter .tracklist li:nth-child(3){animation-delay:.08s}
-  #albumDetail.enter .tracklist li:nth-child(4){animation-delay:.12s} #albumDetail.enter .tracklist li:nth-child(5){animation-delay:.16s}
-  #albumDetail.enter .tracklist li:nth-child(6){animation-delay:.2s}
+  .ad-info.enter,.tracklist.enter li{animation:fadeUp .4s var(--ease) both}
+  .tracklist.enter li:nth-child(2){animation-delay:.04s} .tracklist.enter li:nth-child(3){animation-delay:.08s}
+  .tracklist.enter li:nth-child(4){animation-delay:.12s} .tracklist.enter li:nth-child(5){animation-delay:.16s}
+  .tracklist.enter li:nth-child(6){animation-delay:.2s}
   .eq{display:inline-flex;align-items:flex-end;gap:2px;height:14px;flex:none}
   .eq i{display:block;width:3px;height:100%;background:currentColor;transform-origin:bottom;transform:scaleY(.15)}
   .eq.tiny{height:12px;color:var(--ink)}
@@ -521,6 +612,19 @@
 </style>
 </head>
 <body>
+<div id="splash" role="status" aria-label="Loading Lofi Studio">
+  <div class="sp-stars" aria-hidden="true"></div>
+  <div class="sp-mid">
+    <svg class="sp-logo" viewBox="0 -1 74 10" aria-hidden="true" shape-rendering="crispEdges"><g class="lt" style="--i:0"><path class="s2" d="M0 0h2v1h-2zM0 1h2v1h-2zM0 2h2v1h-2zM0 3h2v1h-2zM0 4h2v1h-2zM0 5h6v1h-6zM0 6h6v1h-6z" transform="translate(2 2)"/><path class="s1" d="M0 0h2v1h-2zM0 1h2v1h-2zM0 2h2v1h-2zM0 3h2v1h-2zM0 4h2v1h-2zM0 5h6v1h-6zM0 6h6v1h-6z" transform="translate(1 1)"/><path class="a" d="M0 0h2v1h-2zM0 1h2v1h-2zM0 2h2v1h-2zM0 3h2v1h-2zM0 4h2v1h-2zM0 5h6v1h-6zM0 6h6v1h-6z"/></g><g class="lt" style="--i:1"><path class="s2" d="M8 0h4v1h-4zM7 1h2v1h-2zM11 1h2v1h-2zM7 2h2v1h-2zM11 2h2v1h-2zM7 3h2v1h-2zM11 3h2v1h-2zM7 4h2v1h-2zM11 4h2v1h-2zM7 5h2v1h-2zM11 5h2v1h-2zM8 6h4v1h-4z" transform="translate(2 2)"/><path class="s1" d="M8 0h4v1h-4zM7 1h2v1h-2zM11 1h2v1h-2zM7 2h2v1h-2zM11 2h2v1h-2zM7 3h2v1h-2zM11 3h2v1h-2zM7 4h2v1h-2zM11 4h2v1h-2zM7 5h2v1h-2zM11 5h2v1h-2zM8 6h4v1h-4z" transform="translate(1 1)"/><path class="a" d="M8 0h4v1h-4zM7 1h2v1h-2zM11 1h2v1h-2zM7 2h2v1h-2zM11 2h2v1h-2zM7 3h2v1h-2zM11 3h2v1h-2zM7 4h2v1h-2zM11 4h2v1h-2zM7 5h2v1h-2zM11 5h2v1h-2zM8 6h4v1h-4z"/></g><g class="lt" style="--i:2"><path class="s2" d="M14 0h6v1h-6zM14 1h2v1h-2zM14 2h2v1h-2zM14 3h5v1h-5zM14 4h2v1h-2zM14 5h2v1h-2zM14 6h2v1h-2z" transform="translate(2 2)"/><path class="s1" d="M14 0h6v1h-6zM14 1h2v1h-2zM14 2h2v1h-2zM14 3h5v1h-5zM14 4h2v1h-2zM14 5h2v1h-2zM14 6h2v1h-2z" transform="translate(1 1)"/><path class="a" d="M14 0h6v1h-6zM14 1h2v1h-2zM14 2h2v1h-2zM14 3h5v1h-5zM14 4h2v1h-2zM14 5h2v1h-2zM14 6h2v1h-2z"/></g><g class="lt" style="--i:3"><path class="s2" d="M21 0h6v1h-6zM23 1h2v1h-2zM23 2h2v1h-2zM23 3h2v1h-2zM23 4h2v1h-2zM23 5h2v1h-2zM21 6h6v1h-6z" transform="translate(2 2)"/><path class="s1" d="M21 0h6v1h-6zM23 1h2v1h-2zM23 2h2v1h-2zM23 3h2v1h-2zM23 4h2v1h-2zM23 5h2v1h-2zM21 6h6v1h-6z" transform="translate(1 1)"/><path class="a" d="M21 0h6v1h-6zM23 1h2v1h-2zM23 2h2v1h-2zM23 3h2v1h-2zM23 4h2v1h-2zM23 5h2v1h-2zM21 6h6v1h-6z"/></g><g class="lt" style="--i:4"><path class="s2" d="M32 0h5v1h-5zM31 1h2v1h-2zM31 2h2v1h-2zM32 3h4v1h-4zM35 4h2v1h-2zM35 5h2v1h-2zM31 6h5v1h-5z" transform="translate(2 2)"/><path class="s1" d="M32 0h5v1h-5zM31 1h2v1h-2zM31 2h2v1h-2zM32 3h4v1h-4zM35 4h2v1h-2zM35 5h2v1h-2zM31 6h5v1h-5z" transform="translate(1 1)"/><path class="b" d="M32 0h5v1h-5zM31 1h2v1h-2zM31 2h2v1h-2zM32 3h4v1h-4zM35 4h2v1h-2zM35 5h2v1h-2zM31 6h5v1h-5z"/></g><g class="lt" style="--i:5"><path class="s2" d="M38 0h6v1h-6zM40 1h2v1h-2zM40 2h2v1h-2zM40 3h2v1h-2zM40 4h2v1h-2zM40 5h2v1h-2zM40 6h2v1h-2z" transform="translate(2 2)"/><path class="s1" d="M38 0h6v1h-6zM40 1h2v1h-2zM40 2h2v1h-2zM40 3h2v1h-2zM40 4h2v1h-2zM40 5h2v1h-2zM40 6h2v1h-2z" transform="translate(1 1)"/><path class="b" d="M38 0h6v1h-6zM40 1h2v1h-2zM40 2h2v1h-2zM40 3h2v1h-2zM40 4h2v1h-2zM40 5h2v1h-2zM40 6h2v1h-2z"/></g><g class="lt" style="--i:6"><path class="s2" d="M45 0h2v1h-2zM49 0h2v1h-2zM45 1h2v1h-2zM49 1h2v1h-2zM45 2h2v1h-2zM49 2h2v1h-2zM45 3h2v1h-2zM49 3h2v1h-2zM45 4h2v1h-2zM49 4h2v1h-2zM45 5h2v1h-2zM49 5h2v1h-2zM46 6h4v1h-4z" transform="translate(2 2)"/><path class="s1" d="M45 0h2v1h-2zM49 0h2v1h-2zM45 1h2v1h-2zM49 1h2v1h-2zM45 2h2v1h-2zM49 2h2v1h-2zM45 3h2v1h-2zM49 3h2v1h-2zM45 4h2v1h-2zM49 4h2v1h-2zM45 5h2v1h-2zM49 5h2v1h-2zM46 6h4v1h-4z" transform="translate(1 1)"/><path class="b" d="M45 0h2v1h-2zM49 0h2v1h-2zM45 1h2v1h-2zM49 1h2v1h-2zM45 2h2v1h-2zM49 2h2v1h-2zM45 3h2v1h-2zM49 3h2v1h-2zM45 4h2v1h-2zM49 4h2v1h-2zM45 5h2v1h-2zM49 5h2v1h-2zM46 6h4v1h-4z"/></g><g class="lt" style="--i:7"><path class="s2" d="M52 0h5v1h-5zM52 1h2v1h-2zM56 1h2v1h-2zM52 2h2v1h-2zM56 2h2v1h-2zM52 3h2v1h-2zM56 3h2v1h-2zM52 4h2v1h-2zM56 4h2v1h-2zM52 5h2v1h-2zM56 5h2v1h-2zM52 6h5v1h-5z" transform="translate(2 2)"/><path class="s1" d="M52 0h5v1h-5zM52 1h2v1h-2zM56 1h2v1h-2zM52 2h2v1h-2zM56 2h2v1h-2zM52 3h2v1h-2zM56 3h2v1h-2zM52 4h2v1h-2zM56 4h2v1h-2zM52 5h2v1h-2zM56 5h2v1h-2zM52 6h5v1h-5z" transform="translate(1 1)"/><path class="b" d="M52 0h5v1h-5zM52 1h2v1h-2zM56 1h2v1h-2zM52 2h2v1h-2zM56 2h2v1h-2zM52 3h2v1h-2zM56 3h2v1h-2zM52 4h2v1h-2zM56 4h2v1h-2zM52 5h2v1h-2zM56 5h2v1h-2zM52 6h5v1h-5z"/></g><g class="lt" style="--i:8"><path class="s2" d="M59 0h6v1h-6zM61 1h2v1h-2zM61 2h2v1h-2zM61 3h2v1h-2zM61 4h2v1h-2zM61 5h2v1h-2zM59 6h6v1h-6z" transform="translate(2 2)"/><path class="s1" d="M59 0h6v1h-6zM61 1h2v1h-2zM61 2h2v1h-2zM61 3h2v1h-2zM61 4h2v1h-2zM61 5h2v1h-2zM59 6h6v1h-6z" transform="translate(1 1)"/><path class="b" d="M59 0h6v1h-6zM61 1h2v1h-2zM61 2h2v1h-2zM61 3h2v1h-2zM61 4h2v1h-2zM61 5h2v1h-2zM59 6h6v1h-6z"/></g><g class="lt" style="--i:9"><path class="s2" d="M67 0h4v1h-4zM66 1h2v1h-2zM70 1h2v1h-2zM66 2h2v1h-2zM70 2h2v1h-2zM66 3h2v1h-2zM70 3h2v1h-2zM66 4h2v1h-2zM70 4h2v1h-2zM66 5h2v1h-2zM70 5h2v1h-2zM67 6h4v1h-4z" transform="translate(2 2)"/><path class="s1" d="M67 0h4v1h-4zM66 1h2v1h-2zM70 1h2v1h-2zM66 2h2v1h-2zM70 2h2v1h-2zM66 3h2v1h-2zM70 3h2v1h-2zM66 4h2v1h-2zM70 4h2v1h-2zM66 5h2v1h-2zM70 5h2v1h-2zM67 6h4v1h-4z" transform="translate(1 1)"/><path class="b" d="M67 0h4v1h-4zM66 1h2v1h-2zM70 1h2v1h-2zM66 2h2v1h-2zM70 2h2v1h-2zM66 3h2v1h-2zM70 3h2v1h-2zM66 4h2v1h-2zM70 4h2v1h-2zM66 5h2v1h-2zM70 5h2v1h-2zM67 6h4v1h-4z"/></g></svg>
+    <p class="sp-tag">~ cozy beats for tiny pixel worlds ~</p>
+    <div class="sp-load">
+      <div class="sp-bar" aria-hidden="true"><i></i></div>
+      <div class="sp-row"><svg class="sp-vinyl" viewBox="0 0 8 8" aria-hidden="true"><path fill="#ece6ff" d="M2 0h4v1h1v1h1v4h-1v1h-1v1h-4v-1h-1v-1h-1v-4h1v-1h1z"/><rect fill="#e8692c" x="3" y="3" width="2" height="2"/><rect fill="#07040f" x="5" y="1" width="1" height="1"/><rect fill="#07040f" x="6" y="2" width="1" height="1"/></svg><span class="sp-msg">brewing coffee…</span></div>
+    </div>
+  </div>
+</div>
+<!-- iPhone Safari colours its status bar and toolbar from fixed strips at the screen's edges -->
+<div class="edge top" aria-hidden="true"></div><div class="edge bottom" aria-hidden="true"></div>
 <header>
   <div class="brand">
     <h1>LOFI <span class="gold">STUDIO</span></h1>
@@ -905,7 +1009,15 @@ function setKeysSound(type){
   A.keysLP.frequency.value = type === 'felt' ? 1700 : 2800;
 }
 
+// Tone.js loads in the background while the splash is up; playing waits for it.
+const toneReady = new Promise(done => {
+  if (window.Tone) return done();
+  const tag = document.getElementById('toneJs');
+  tag.addEventListener('load', done); tag.addEventListener('error', done);
+});
+
 function applyState(){
+  if (!window.Tone) return;   // nothing is playing yet; play() applies it once Tone is here
   Tone.Transport.bpm.value = state.bpm;
   Tone.Transport.swing = state.swing;
   Tone.Transport.swingSubdivision = '16n';
@@ -1179,6 +1291,7 @@ function sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth}){
 }
 
 async function addSampleFiles(files){
+  await toneReady;
   await ensureAudio();
   for (const file of files){
     if (!file.type.startsWith('audio') && !/\.(wav|mp3|m4a|aac|ogg|flac|aiff?)$/i.test(file.name)) continue;
@@ -1310,6 +1423,7 @@ function ensureAudio(){
 }
 
 async function play(){
+  await toneReady;
   await Tone.start();
   await ensureAudio();
   applyState();
@@ -3133,23 +3247,32 @@ const farRidge = x => 90 - 9 * Math.sin(TAU * x / CW_FAR * 2 + 1) - 6 * Math.sin
 const midRidge = x => 104 - 5 * Math.sin(TAU * x / CW_MID * 3 + 4) - 2.5 * Math.sin(TAU * x / CW_MID * 7);
 let CASTLE = null;
 
+const CASTLE_PARTS = {
+  sky: () => paintCastleSky(),
+  far: () => paintRidge(CW_FAR, farRidge, ['#130d34','#18113e','#1e1648','#261d54','#30265f'], 51, '#6a58b0', 26, null, true),
+  mid: () => paintRidge(CW_MID, midRidge, ['#0c0824','#100b2c','#150f36','#1a1340'], 52, '#3e3080', 14, ['#06041a','#0a0722','#0f0b2c','#16113a']),
+  keep: () => paintKeep(),
+  mist: () => paintMist(),
+  wall: () => paintWall(),
+  lit: () => ['#ffd27a', '#ff9a48'].map(base => {
+    const p = painter(5, 8);
+    for (let j = 0; j < 8; j++) for (let i = 0; i < 5; i++){
+      if (j === 0 && (i === 0 || i === 4)) continue;
+      p.put(i, j, rgb(i === 2 || j === 4 ? '#7a3c14' : j < 3 ? '#fff4c8' : base));
+    }
+    return p.canvas();
+  }),
+};
 function castleLayers(){
-  return CASTLE ||= {
-    sky: paintCastleSky(),
-    far: paintRidge(CW_FAR, farRidge, ['#130d34','#18113e','#1e1648','#261d54','#30265f'], 51, '#6a58b0', 26, null, true),
-    mid: paintRidge(CW_MID, midRidge, ['#0c0824','#100b2c','#150f36','#1a1340'], 52, '#3e3080', 14, ['#06041a','#0a0722','#0f0b2c','#16113a']),
-    keep: paintKeep(),
-    mist: paintMist(),
-    wall: paintWall(),
-    lit: ['#ffd27a', '#ff9a48'].map(base => {
-      const p = painter(5, 8);
-      for (let j = 0; j < 8; j++) for (let i = 0; i < 5; i++){
-        if (j === 0 && (i === 0 || i === 4)) continue;
-        p.put(i, j, rgb(i === 2 || j === 4 ? '#7a3c14' : j < 3 ? '#fff4c8' : base));
-      }
-      return p.canvas();
-    }),
-  };
+  if (!CASTLE){ const L = {}; for (const [k, paint] of Object.entries(CASTLE_PARTS)) L[k] = paint(); CASTLE = L; }
+  return CASTLE;
+}
+// the same, a layer per frame, so the splash keeps moving while the castle is painted
+async function warmCastle(onStep){
+  if (CASTLE) return;
+  const L = {}, parts = Object.entries(CASTLE_PARTS);
+  for (const [i, [k, paint]] of parts.entries()){ L[k] = paint(); onStep((i + 1) / parts.length); await nextFrame(); }
+  CASTLE ||= L;
 }
 
 // draw a wrapping layer across the view; returns its left edge in device pixels
@@ -4251,7 +4374,8 @@ const albumLength = al => fmtTime(al.tracks.reduce((s, t) => s + trackSeconds(t)
 function buildCarousel(){
   const view = $('albumsView');
   view.innerHTML = `
-    <div class="carousel">
+    <div class="al-top">
+      <div class="carousel">
       <button class="car-nav prev" data-nav="-1" aria-label="Previous album">◀</button>
       <div class="car-track" id="carTrack" role="listbox" aria-label="Albums" tabindex="0">
         ${ALBUMS.map((al, i) => `
@@ -4261,9 +4385,11 @@ function buildCarousel(){
           </button>`).join('')}
       </div>
       <button class="car-nav next" data-nav="1" aria-label="Next album">▶</button>
+      </div>
+      <div class="car-dots">${ALBUMS.map((al, i) => `<button data-dot="${i}" aria-label="${al.title}"></button>`).join('')}</div>
+      <div class="ad-info" id="albumInfo" aria-live="polite"></div>
     </div>
-    <div class="car-dots">${ALBUMS.map((al, i) => `<button data-dot="${i}" aria-label="${al.title}"></button>`).join('')}</div>
-    <div id="albumDetail" aria-live="polite"></div>`;
+    <ol class="tracklist" id="albumTracks"></ol>`;
   // paint the still covers a few at a time so opening the tab stays snappy
   const slides = [...view.querySelectorAll('.slide')];
   slides.forEach((s, i) => setTimeout(() => paintCover(s.querySelector('canvas'), ALBUMS[i]), 30 + i * 40));
@@ -4314,29 +4440,27 @@ function updateCarousel(){
 
 let lastDetailAlbum = -1;
 function renderAlbumDetail(){
-  const box = $('albumDetail'); if (!box) return;
-  const al = ALBUMS[openAlbum];
+  const info = $('albumInfo'), list = $('albumTracks'); if (!info) return;
+  const al = ALBUMS[openAlbum], fresh = openAlbum !== lastDetailAlbum;
   // slide the details in when you move to a different album (not on every refresh)
-  box.classList.toggle('enter', openAlbum !== lastDetailAlbum);
+  info.classList.toggle('enter', fresh); list.classList.toggle('enter', fresh);
   lastDetailAlbum = openAlbum;
-  box.innerHTML = `
-    <div class="ad-info">
+  info.innerHTML = `
       <h3>${al.title}</h3>
       <p class="ds">${al.tracks.length} tracks · ${albumLength(al)}</p>
       <p class="blurb">${al.blurb}</p>
       <div class="ad-actions">
         <button class="primary" data-playalbum aria-label="Play album"><span aria-hidden="true">▶</span><span class="lbl"> PLAY ALBUM</span></button>
         <button data-cover aria-label="Download cover art" title="Download the cover art"><span aria-hidden="true">⬇</span><span class="lbl"> COVER</span></button>
-      </div>
-    </div>
-    <ol class="tracklist">${al.tracks.map((t, i) => {
+      </div>`;
+  list.innerHTML = `${al.tracks.map((t, i) => {
       const on = currentTrack && currentTrack.a === openAlbum && currentTrack.t === i;
       return `<li><button data-track="${i}" class="${on ? 'on' : ''}" aria-current="${on}" title="${t.name}">
         <span class="no">${on && playing ? '<span class="eq tiny"><i></i><i></i><i></i></span>' : String(i + 1).padStart(2, '0')}</span>
         <span class="tn">${t.name}</span>
         <span class="tm">${fmtTime(trackSeconds(t))}</span>
       </button></li>`;
-    }).join('')}</ol>`;
+    }).join('')}`;
   fitPage();
 }
 
@@ -4426,19 +4550,92 @@ function bindAlbumsUI(){
   });
 }
 
-buildUI();
-bindLedUI();
-bindSamplesUI();
-bindTabs();
-bindAlbumsUI();
-new ResizeObserver(() => fitPage()).observe(document.querySelector('.pages'));
-document.fonts.ready.then(() => fitPage());
-bindCharacterUI();
-splitTitle();
-typePlaceholders($('vibe'));
-syncUI();
-applyState();
-drawScene();
+// ---------- start-up ----------
+// The splash covers the page while it gets ready: the controls are built, the castle is
+// painted a layer at a time, the albums' scenes are warmed up, and the pixel fonts arrive.
+// Then the iris opens onto the finished studio, which rises into place as it does.
+const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const SPLASH_LINES = {office: 'lighting the desk lamp', park: 'feeding the pigeons', lake: 'stilling the lake',
+  cafe: 'steaming the milk', garden: 'watering the garden', forest: 'building the campfire', beach: 'waiting for the tide'};
+
+function splash(p, line){
+  const s = $('splash');
+  if (!s) return;
+  s.style.setProperty('--p', p);
+  if (line) s.querySelector('.sp-msg').textContent = line + '…';
+}
+
+// the pixel fonts: the stylesheet loads without blocking the page, then its fonts download
+async function fontsReady(timeout){
+  const css = $('fontCss');
+  const loaded = css.media === 'all' ? Promise.resolve() : new Promise(r => { css.addEventListener('load', r); css.addEventListener('error', r); });
+  const fonts = loaded.then(() => Promise.all([document.fonts.load('16px "Press Start 2P"'), document.fonts.load('20px VT323')]));
+  fonts.then(() => fitPage());   // re-fit when they land, even if that's after the splash has gone
+  await Promise.race([fonts, sleep(timeout)]);
+}
+
+async function reveal(){
+  const s = $('splash');
+  document.documentElement.classList.remove('booting');   // the studio's own intro plays as the iris opens
+  if (reduceMotion){ s.classList.add('gone'); await sleep(260); s.remove(); return; }
+  s.classList.add('opening');
+  await sleep(200);
+  // an iris wipe from the middle, growing in chunky steps like an old console's
+  const R = Math.hypot(innerWidth, innerHeight) * .6 + 20, t0 = performance.now(), D = 720;
+  await new Promise(done => {
+    const tick = now => {
+      const u = Math.min(1, (now - t0) / D), e = u * u * (3 - 2 * u);
+      s.style.setProperty('--r', Math.round(e * R / 14) * 14 + 'px');
+      if (u < 1) requestAnimationFrame(tick); else done();
+    };
+    requestAnimationFrame(tick);
+  });
+  s.remove();
+}
+
+async function boot(){
+  const t0 = performance.now();
+  let drawing = false;
+  try {
+    await nextFrame();   // let the splash paint before any heavy lifting
+    splash(.06, 'tuning the piano');
+    buildUI();
+    bindLedUI();
+    bindSamplesUI();
+    bindTabs();
+    bindAlbumsUI();
+    new ResizeObserver(() => fitPage()).observe(document.querySelector('.pages'));
+    bindCharacterUI();
+    splitTitle();
+    typePlaceholders($('vibe'));
+    syncUI();
+    applyState();
+    await nextFrame();
+    splash(.14, 'painting the castle');
+    await warmCastle(f => splash(.14 + f * .4));
+    drawScene(); drawing = true;
+    // warm up the albums' scenes too, so opening one later is instant (unless this is a slow device)
+    for (const [i, al] of ALBUMS.entries()){
+      if (performance.now() - t0 > 2600) break;
+      splash(.56 + i / ALBUMS.length * .32, SPLASH_LINES[al.scene]);
+      await nextFrame();
+      renderPlace(al, performance.now() / 1000, 0);
+    }
+    splash(.92, 'dropping the needle');
+    await fontsReady(3000);
+    fitPage();
+    await sleep(Math.max(0, 1200 - (performance.now() - t0)));   // a beat to take in the title
+    splash(1);
+    await sleep(320);
+  } catch (e) {
+    // whatever went wrong, never leave someone staring at the splash
+    console.error(e);
+    if (!drawing) drawScene();
+  }
+  await reveal();
+}
+boot();
 </script>
 </body>
 </html>
