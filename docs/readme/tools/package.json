@@ -1,0 +1,7 @@
+{
+  "name": "lofi-studio-readme-tools",
+  "private": true,
+  "type": "module",
+  "description": "Rebuilds the README's pictures from the running app. See make.sh.",
+  "dependencies": {"playwright-core": "^1.50.0"}
+}

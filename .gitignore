@@ -1,1 +1,6 @@
 .DS_Store
+
+# README tools
+docs/readme/tools/node_modules/
+docs/readme/tools/.frames/
+docs/readme/tools/package-lock.json
