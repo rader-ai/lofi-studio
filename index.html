@@ -879,9 +879,9 @@
 //   the music     music theory, patterns, styles, state, helpers, audio graph, sequencer,
 //                 your samples, transport, vibe text → settings
 //   the controls  UI, motion helpers, LED mode, character switch
-//   the scenes    scene state + sprites, scenes (castle + album places), living foliage,
-//                 grass, flowers and things that sway (birds and the park's people follow it),
-//                 then PLACES, which draws each world
+//   the scenes    scene state + sprites, scenes (castle + album places), people, a little life,
+//                 living foliage, grass, flowers and things that sway (birds and the park's
+//                 people follow it), then PLACES, which draws each world
 //   the rest      albums, the panel's tabs, phones: swipe the scene, start-up
 
 // ---------- music theory ----------
@@ -2221,8 +2221,8 @@ function bindCharacterUI(){
 
 // ---------- scene state + sprites ----------
 // Scenes are laid out on a 320×150 grid and painted at 2× by the toolkit below.
-const SW = 320, SH = 150, WALL_Y = 124, STRIDE = 6.5; // STRIDE: ground moved per step (one quarter note)
-const scene = {heroX:46, heroY:WALL_Y - 18, beat:0, flash:0, step:0, scroll:0, last:performance.now()/1000, speed:0, notes:[]};
+const SW = 320, SH = 150, WALL_Y = 124, STRIDE = 5; // STRIDE: ground moved per step (one quarter note)
+const scene = {heroX:46, heroY:WALL_Y - 18, beat:0, q:0, flash:0, step:0, scroll:0, walk:0, nudge:0, last:performance.now()/1000, speed:0, notes:[]};
 
 const BAT = [
   ['k.....k', 'kk.k.kk', '.kkkkk.', '..k.k..'],
@@ -2235,15 +2235,22 @@ function drawScene(){
   g.imageSmoothingEnabled = false;
   const now = performance.now() / 1000, dt = Math.min(.1, now - scene.last);
   scene.last = now;
-  // the ground moves exactly as fast as the walker's feet, and only while they walk
-  scene.speed = playing ? STRIDE * state.bpm / 60 : 0;
-  scene.scroll += dt * scene.speed;
+  // the walker eases into a stride and out of it, and the ground moves exactly as fast as
+  // their feet. On the beat the stride is nudged so that a foot lands with it.
+  scene.walk += ((playing ? 1 : 0) - scene.walk) * Math.min(1, dt * 3);
+  if (scene.walk < .01) scene.walk = 0;
+  scene.speed = STRIDE * state.bpm / 60 * scene.walk;
+  const fix = scene.nudge * Math.min(1, dt * 2);
+  scene.scroll += dt * scene.speed + fix;
+  scene.nudge -= fix;
   const t = now, k = ck(g);
   windy += ((state.layers.rain.on ? 1.7 : 1) - windy) * Math.min(1, dt * .5);
 
   const sid = activeSceneId();
-  k.who = whoFor(sid);
+  k.who = whoFor(sid); k.live = true;
+  lifeTick(dt, sid, k.who, !WALKERS.has(sid));
   PLACES[sid].draw(g, t, dt, k);
+  lifeFxDraw(k, dt);
 
   // notes rising off the wanderer
   for (const n of scene.notes){
@@ -2261,6 +2268,7 @@ function drawScene(){
   animateCover(t, dt);
   uiFrame(t);
   scene.beat *= Math.pow(.02, dt);
+  scene.q *= Math.pow(.01, dt);
   scene.flash *= Math.pow(.01, dt);
   requestAnimationFrame(drawScene);
 }
@@ -2268,6 +2276,11 @@ function drawScene(){
 function sceneBeat(quarter){
   scene.beat = 1;
   scene.step++;
+  if (quarter){
+    scene.q = 1;
+    const steps = scene.scroll / STRIDE;
+    scene.nudge = (Math.round(steps) - steps) * STRIDE;
+  }
   if (quarter && Math.random() < .45)
     scene.notes.push({x: scene.heroX + 12, y: scene.heroY - 4, p: Math.random() * 6, life: 2.4, col: Math.random() < .5 ? '#f5c542' : '#4fd1c5'});
 }
@@ -2696,8 +2709,8 @@ function cloudSprite(w, h, cols, seed){
   return CLOUD_SPRITES.get(key);
 }
 
-// The two lo-fi characters: a guy and a girl in hoodies, both in headphones.
-// Head + body are shared between poses; legs switch between walking and sitting.
+// The two lo-fi characters: a guy and a girl in hoodies, both in headphones. These are
+// the parts that are drawn rather than posed; "people" below puts them together.
 const HEAD_GUY = [
   '....kkkk....',
   '...kHpHhk...',
@@ -2720,21 +2733,63 @@ const HEAD_GIRL = [
   'khhkhSsssSk.',
   'khhOkkSSSk..',
 ];
-const BODY_GUY = ['.kOOoLLLLk..', '.kOoooooodk.', '.kOoOoooodk.', '.kOoOooOook.', '..kOOOOOOk..'];
-const BODY_GIRL = ['khhOoLLLLk..', 'khhoooooodk.', '.khoOoooodk.', '.kkoOooOook.', '..kOOOOOOk..'];
-const LEGS_WALK = [
-  ['..kjjJjjjk..', '.kjjk.kjjk..', '.kjk...kjjk.', 'kwwk...kwwwk'],
-  ['..kjjJjjjk..', '...kjjJjk...', '...kjjjjk...', '...kwwwwwk..'],
+// the same heads turned toward us: halfway, then face on
+const QUARTER_GUY = [
+  '....kkkk....',
+  '...kHpHHk...',
+  '..kHphhhHk..',
+  '..kphhhhhhk.',
+  '.kPPhhhsssk.',
+  '.kPPPhsesek.',
+  '.kpPpssssSk.',
+  '..khhSssSk..',
+  '..kOkkSSSk..',
 ];
-const LEGS_SIT = ['..kjjjjjjjjk.', '..kJJJJJJjjk.', '..kkkkkkkjjk.', '........kjjk.', '........kjjk.', '.......kwwwwk'];
-const SEAT_ROW = 16; // the row of the sitting sprite that rests on the seat
+const QUARTER_GIRL = [
+  '....kkkk....',
+  '...kHpHHk...',
+  '..kHphhhHk..',
+  '.khphhhhhhk.',
+  'khPPhhhsssk.',
+  'khPPPhsesek.',
+  'khpPpsrssrk.',
+  'khhkhSssSk..',
+  'khhOkkSSSk..',
+];
+const FRONT_GUY = [
+  '....kkkk....',
+  '..kkppppkk..',
+  '.khhHHHHhhk.',
+  '.khhhhhhhhk.',
+  'kPhhsssshhPk',
+  'kPPsessesPPk',
+  'kPpssssssspk',
+  '.kkSssssSkk.',
+  '...kkSSkk...',
+];
+const FRONT_GIRL = [
+  '....kkkk....',
+  '..kkppppkk..',
+  '.khhHHHHhhk.',
+  '.khhhhhhhhk.',
+  'kPhhsssshhPk',
+  'kPPsessesPPk',
+  'kPprssssrpPk',
+  'khhSssssShhk',
+  'khhkkSSkkhhk',
+];
+const TORSO_GUY = ['.kOOoLLLLk..', '.kOooooook..', '.kOooooook..', '.kOoooooOk..', '..kOOOOOk...'];
+const TORSO_GIRL = ['.kOOoLLLLk..', '.kOooooook..', '.kOooooook..', '..kOoooOk...', '..kOOOOOk...'];
+const LOOK_GUY = {head: HEAD_GUY, quarter: QUARTER_GUY, front: FRONT_GUY, torso: TORSO_GUY};
+const LOOK_GIRL = {head: HEAD_GIRL, quarter: QUARTER_GIRL, front: FRONT_GIRL, torso: TORSO_GIRL, longHair: true};
 const CHARS = {
-  guy:  {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1c16', H:'#5a3e2c', s:'#f0c6a0', S:'#d49a78', e:'#1a1020',
+  guy:  {...LOOK_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1c16', H:'#5a3e2c', s:'#f0c6a0', S:'#d49a78', e:'#1a1020',
          p:'#2a2a36', P:'#e04a4a', o:'#e8963a', O:'#b8692a', L:'#ffc878', d:'#f4ead8', j:'#3a4a78', J:'#28345a', w:'#f2f0ea'}},
-  girl: {head: HEAD_GIRL, body: BODY_GIRL, colors: {_flat:1, k:'#1a1020', h:'#3a2418', H:'#6a4430', s:'#f4cfae', S:'#d8a682', e:'#1a1020', r:'#f08a9a',
-         p:'#f4f0f8', P:'#f07aa8', o:'#b49ae8', O:'#8a6ac8', L:'#dccfff', d:'#ffffff', j:'#2e2840', J:'#1e1a2c', w:'#f6f4f0'}},
+  girl: {...LOOK_GIRL, colors: {_flat:1, k:'#1a1020', h:'#3a2418', H:'#6a4430', s:'#f4cfae', S:'#d8a682', e:'#1a1020', r:'#f08a9a',
+         p:'#f4f0f8', P:'#f07aa8', o:'#b49ae8', O:'#8a6ac8', L:'#dccfff', d:'#ffffff', j:'#463c66', J:'#2e2848', w:'#f6f4f0'}},
 };
 // who appears where: the guy walks the castle, the albums take turns
+const WALKERS = new Set(['castle', 'beach']);   // everywhere else they're sitting down
 const CHAR_FOR = {castle:'guy', office:'girl', park:'guy', lake:'girl', cafe:'guy', garden:'girl', forest:'guy', beach:'girl'};
 const CAT = ['..o...o.....', '.ooo.ooo....', '.oooooodddo.', 'oooodooooooo', '.oooooodoooo'];
 const PERSON = [
@@ -2746,6 +2801,449 @@ const BUTTERFLY = [
   ['w.k.w', 'wwkww', '.wkw.'],
   ['..k..', '.wkw.', '.wkw.'],
 ];
+
+// ---------- people ----------
+// Everyone is put together joint by joint at the canvas's own pixels (2× the scene grid): a
+// head and torso from the rows above, arms and legs as outlined tubes that bend at the elbow
+// and knee. So a hand can reach for the hair, a head can tip back for a yawn, and a planted
+// foot stays planted while the body passes over it. Each finished pose is kept as a small
+// canvas, so only a new pose costs anything.
+const RIG_W = 52, RIG_H = 56, RIG_X = 13, RIG_Y = 12;      // the sprite's corner inside the buffer
+const RIG_GROUND = 41;                                     // where a standing person's soles are
+const rigPx = new Uint8Array(RIG_W * RIG_H), rigMask = new Uint8Array(RIG_W * RIG_H);
+const code = ch => ch.charCodeAt(0);
+const lerp = (a, b, u) => a + (b - a) * u;
+const INK = code('k'), HOOD_DARK = code('O'), HOODIE = new Set([code('o'), HOOD_DARK, code('L')]);
+const rigAt = (x, y) => { x += RIG_X; y += RIG_Y; return x >= 0 && y >= 0 && x < RIG_W && y < RIG_H ? y * RIG_W + x : -1; };
+function rigStamp(rows, x, y){
+  for (let j = 0; j < rows.length; j++) for (let i = 0; i < rows[j].length; i++){
+    const c = rows[j].charCodeAt(i), at = rigAt(x + i, y + j);
+    if (c !== 46 && at >= 0) rigPx[at] = c;
+  }
+}
+const flipRows = rows => { const w = Math.max(...rows.map(r => r.length)); return rows.map(r => [...r.padEnd(w, '.')].reverse().join('')); };
+const scaled = (rows, n = 1) => { let g = rows; for (let i = 0; i < n; i++) g = epx(g).map(r => r.join('')); return g; };
+
+const BRUSH = {
+  hand: [[-1, -1], [0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [-1, 1], [0, 1], [1, 1]],
+  3: [[0, -1], [-1, 0], [0, 0], [1, 0], [0, 1]],
+  4: [[0, -1], [1, -1], [-1, 0], [0, 0], [1, 0], [2, 0], [-1, 1], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2]],
+};
+// A tube through some points. edge(under) picks the outline for what lies beneath it, and
+// the underside is shaded unless plain(under) says that spot should stay flat.
+function rigTube(pts, width, fill, shade, edge, plain){
+  const cells = [], brush = BRUSH[width];
+  for (let s = 0; s < pts.length - 1; s++){
+    const [ax, ay] = pts[s], [bx, by] = pts[s + 1], n = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 2));
+    for (let j = 0; j <= n; j++){
+      const cx = Math.round(ax + (bx - ax) * j / n), cy = Math.round(ay + (by - ay) * j / n);
+      for (const [dx, dy] of brush){
+        const at = rigAt(cx + dx, cy + dy);
+        if (at >= 0 && !rigMask[at]){ rigMask[at] = 1; cells.push(at); }
+      }
+    }
+  }
+  for (const i of cells) for (const d of [-1, 1, -RIG_W, RIG_W]){
+    const o = i + d;
+    if (o >= 0 && o < rigPx.length && !rigMask[o]) rigPx[o] = edge(rigPx[o]);
+  }
+  for (const i of cells){
+    rigPx[i] = !rigMask[i + RIG_W] && !(plain && plain(rigPx[i])) ? shade : fill;
+  }
+  for (const i of cells) rigMask[i] = 0;
+}
+// the joint between two points, for bones this long: bent to one side, straight if it has to reach
+function rigJoint(a, b, l1, l2, side){
+  const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1;
+  if (d >= l1 + l2) return [a[0] + dx / 2, a[1] + dy / 2];
+  const along = (d * d + l1 * l1 - l2 * l2) / (2 * d), out = Math.sqrt(Math.max(0, l1 * l1 - along * along));
+  return [a[0] + dx / d * along - dy / d * out * side, a[1] + dy / d * along + dx / d * out * side];
+}
+
+const onHoodie = under => HOODIE.has(under);
+const sleeveEdge = under => HOODIE.has(under) ? HOOD_DARK : INK;
+const legEdge = under => under === 0 || under === INK ? INK : under;
+// Arms are a little elastic, so they can bend at any reach. hand[2] says how: 1 is relaxed,
+// 0 is straight, and -1 sends the elbow back instead of forward.
+function rigArm(sh, hand, far){
+  const bend = hand[2] ?? 1, d0 = Math.hypot(hand[0] - sh[0], hand[1] - sh[1]), bone = lerp(d0 / 2, Math.max(6.2, d0 * .6), Math.abs(bend));
+  const e = rigJoint(sh, hand, bone, bone, bend < 0 ? -1 : 1);
+  const dx = hand[0] - e[0], dy = hand[1] - e[1], d = Math.hypot(dx, dy) || 1;
+  const wrist = [hand[0] - dx / d * 2, hand[1] - dy / d * 2];
+  rigTube([sh, e, wrist], 3, far ? HOOD_DARK : code('o'), HOOD_DARK, far ? () => INK : sleeveEdge, onHoodie);
+  rigTube([hand, hand], 'hand', code('s'), code('S'), () => INK);
+}
+const SHOES = {
+  flat: {y: 1, rows: ['kwwwwkk.', 'kwwwwwwk', 'kWWWWWWk']},
+  up:   {y: 0, rows: ['......kk', 'kwwwwkwk', 'kwwwwwwk', 'kWWWkkk.']},
+  down: {y: 1, rows: ['kwwk....', 'kwwwk...', '.kwwwwk.', '..kwwwwk', '...kWWWk']},
+};
+const SHOE_FAR = {};
+for (const [n, sh] of Object.entries(SHOES)) SHOE_FAR[n] = {y: sh.y, rows: sh.rows.map(r => r.replace(/W/g, 'k').replace(/w/g, 'W'))};
+function rigLeg(hip, knee, ankle, shoe, far){
+  rigTube([hip, knee, ankle], 4, code(far ? 'J' : 'j'), code('J'), legEdge);
+  const sh = (far ? SHOE_FAR : SHOES)[shoe];
+  rigStamp(sh.rows, ankle[0] - 2, ankle[1] + sh.y);
+}
+const NECK = ['...kkkkkkkk...', '...kkkkkkkk...', '.kkkkkkkkkkkk.', '.kkkkkkkkkkkk.'];
+const THIGH = ['....kkjjjjjjjjjjjj', '.....kjjjjjjjjjjjj', '.....kjjjjjjjjjjjjjjjjk...', '....kkjjjjjjjjjjjjjjjjkk..', '....kkJJJJJJJJJJJjjjjjkk..', '....kkkJJJJJJJJJJJjjjjkk..', '....kkkkkkkkkkkkkkjjjjkk..', '.....kkkkkkkkkkkkkjjjjkk..'];
+
+// ---- heads ----
+// Eyes and mouth are painted onto the head, and a head tipped by a few degrees is turned the
+// way pixel artists do it: upscaled, rotated, sampled back down, so its lines stay clean.
+const HEADS = new Map();
+function faceEdit(g, view, eyes, mouth){
+  const set = (x, y, c) => { if (g[y]) g[y][x] = c; };
+  if (view === 'F'){
+    const eye = (x, how) => {
+      if (how === 'half'){ set(x, 10, 'S'); set(x + 1, 10, 'S'); }
+      else if (how === 'shut'){ set(x, 10, 's'); set(x + 1, 10, 's'); }
+      else if (how === 'arc'){ set(x - 1, 11, 'e'); set(x, 10, 'e'); set(x + 1, 10, 'e'); set(x + 2, 11, 'e'); set(x, 11, 's'); set(x + 1, 11, 's'); }
+    };
+    eye(8, eyes === 'wink' ? 'open' : eyes); eye(14, eyes === 'wink' ? 'arc' : eyes);
+    if (mouth === 'smile'){ set(10, 14, 'm'); set(11, 15, 'm'); set(12, 15, 'm'); set(13, 14, 'm'); }
+    else if (mouth === 'o' || mouth === 'ah'){ for (const x of [11, 12]) for (const y of [14, 15]) set(x, y, 'm'); }
+    return;
+  }
+  if (view === 'Q'){
+    if (eyes !== 'open'){ for (const x of [14, 18]){ set(x, 10, 's'); set(x + 1, 10, 's'); } }
+    return;
+  }
+  // in profile the one eye is at (16,10), two pixels square
+  if (eyes === 'half'){ set(16, 10, 'S'); set(17, 10, 'S'); }
+  else if (eyes === 'shut'){ set(16, 10, 's'); set(17, 10, 's'); set(15, 11, 'e'); }
+  else if (eyes === 'squint'){ set(17, 10, 's'); set(16, 11, 's'); set(16, 12, 'e'); }
+  else if (eyes === 'up'){ set(16, 9, 'e'); set(17, 9, 'e'); set(16, 11, 's'); set(17, 11, 's'); }
+  else if (eyes === 'down'){ set(16, 10, 'S'); set(17, 10, 'S'); set(16, 12, 'e'); set(17, 12, 'e'); set(16, 11, 'e'); }
+  if (mouth === 'smile'){ set(17, 15, 'S'); set(18, 14, 'm'); set(19, 14, 'm'); }
+  else if (mouth === 'o'){ set(18, 14, 'm'); set(19, 14, 'm'); set(18, 15, 'm'); set(19, 13, 's'); }
+  else if (mouth === 'ah'){ for (const [x, y] of [[17, 14], [18, 14], [19, 14], [17, 15], [18, 15], [18, 16], [17, 16]]) set(x, y, 'm'); set(19, 15, 'k'); set(19, 16, 'k'); }
+  else if (mouth === 'wide'){
+    for (let y = 14; y <= 17; y++) for (let x = 16; x <= 19; x++) set(x, y, 'm');
+    for (let x = 15; x <= 19; x++) set(x, 18, 'S');
+    set(15, 14, 'k'); set(20, 15, 'k'); set(20, 16, 'k'); set(20, 17, 'k'); set(15, 15, 'S'); set(15, 16, 'S'); set(15, 17, 'S');
+    for (let x = 14; x <= 19; x++) set(x, 19, 'k');
+    set(20, 18, 'k');
+  }
+}
+function rigHead(c, view, eyes, mouth, tilt){
+  const face = (c.longHair ? 'g' : 'b') + view + eyes + mouth, key = face + tilt;
+  let h = HEADS.get(key);
+  if (h) return h;
+  let base = HEADS.get(face);
+  if (!base){
+    const src = view === 'F' ? c.front : view === 'Q' ? c.quarter : c.head, g = scaled(src).map(r => [...r]);
+    g.push(Array(24).fill('.'), Array(24).fill('.'));   // room for a dropped jaw
+    faceEdit(g, view, eyes, mouth);
+    base = {rows: g.map(r => r.join('')), x: 0, y: 0};
+    HEADS.set(face, base);
+  }
+  if (!tilt) return base;
+  // tip it about the neck
+  const big = base.big ||= scaled(base.rows, 3), a = tilt * Math.PI / 180, cs = Math.cos(a), sn = Math.sin(a), px = 11.5, py = 18, M = 8, W = 24 + M * 2, H = 20 + M * 2, rows = [];
+  for (let y = 0; y < H; y++){
+    let r = '';
+    for (let x = 0; x < W; x++){
+      const dx = x + .5 - M - px, dy = y + .5 - M - py;
+      const sx = Math.floor((px + dx * cs + dy * sn) * 8), sy = Math.floor((py - dx * sn + dy * cs) * 8);
+      r += big[sy]?.[sx] || '.';
+    }
+    rows.push(r);
+  }
+  h = {rows, x: -M, y: -M};
+  HEADS.set(key, h);
+  return h;
+}
+
+// ---- a whole pose ----
+function rigPaint(c, p){
+  rigPx.fill(0);
+  const lean = p.lean, up = p.chest, nS = [8 + lean, 22 + up], fS = [13 + lean, 22 + up];
+  rigArm(fS, p.far, true);
+  if (p.sit){
+    rigLeg([19, 30], [19, 31], [19 + p.kick2, 36], 'flat', true);
+    rigStamp(THIGH, 0, 26);
+    rigLeg([19, 30], [19, 31], [19 + p.kick, 36], p.tap ? 'up' : 'flat', false);
+  } else {
+    const hip = [10, 27 + p.hipY], hipF = [hip[0] + 1, hip[1]];
+    const nA = [hip[0] + p.nx, RIG_GROUND - 4 - p.ny], fA = [hip[0] + p.fx, RIG_GROUND - 4 - p.fy];
+    rigLeg(hipF, rigJoint(hipF, fA, 5.3, 5.3, -1), fA, p.fs, true);
+    rigLeg(hip, rigJoint(hip, nA, 5.3, 5.3, -1), nA, p.ns, false);
+  }
+  // the hem stays on the hips while the chest above it rises and falls
+  const torso = c.torsoRows ||= scaled(c.torso), y0 = 18 + (p.sit ? 0 : p.hipY), hem = 8, half = Math.trunc(lean / 2);
+  for (let j = hem; j < torso.length; j++) rigStamp([torso[j]], half, y0 + j);
+  for (let j = hem - 1 + up; j < hem - 1; j++) rigStamp([torso[hem - 1]], half, y0 + j + 1);
+  for (let j = 0; j < hem; j++) rigStamp([torso[j]], lean, y0 + j + up);
+  if (c.longHair) rigHair(p.hx + lean, y0 + up, p.hair, p.view === 'L');
+  rigStamp(NECK, 5 + p.hx + lean, y0 + up - 4);
+  const h = rigHead(c, p.view === 'L' ? 'R' : p.view, p.eyes, p.mouth, p.tilt), hx = p.hx + lean + h.x, hy = (p.sit ? 0 : p.hipY) + p.hy + up + h.y;
+  rigStamp(p.view === 'L' ? flipRows(h.rows) : h.rows, hx, hy);
+  rigArm(nS, p.near, false);
+}
+// her hair falls over the back of the hoodie and swings a little behind the rest of her
+const HAIR = ['.khhhh', '.khhhh', '.khhhh', '.khhhh', 'kkhHhh', 'kkhHhh', '.kkhhh', '.kkhhh', '..kkkh', '..kkkk'];
+const HAIR_L = flipRows(HAIR);
+function rigHair(x, y, swing, front){
+  HAIR.forEach((row, j) => {
+    const dx = Math.round(swing * Math.max(0, j - 2) / 7);
+    if (front) rigStamp([HAIR_L[j]], x + 17 - dx, y + j - 3);
+    else rigStamp([row], x + dx, y + j - 3);
+  });
+}
+
+const PALETTES = new WeakMap(), rigImg = new ImageData(RIG_W, RIG_H), rigOut = new Uint32Array(rigImg.data.buffer);
+function rigPalette(colors){
+  let pal = PALETTES.get(colors);
+  if (pal) return pal;
+  pal = new Uint32Array(128);
+  const all = {...colors, m: '#7a2a3a', W: css(mixA(rgb(colors.w), [26, 16, 64], .28))};
+  for (const [ch, col] of Object.entries(all)){
+    if (ch.length !== 1) continue;
+    const [r, g, b] = rgb(col);
+    pal[code(ch)] = (255 << 24 | b << 16 | g << 8 | r) >>> 0;
+  }
+  PALETTES.set(colors, pal);
+  return pal;
+}
+const POSES = new Map();
+function rigFrame(c, p, dir = 1){
+  const key = [c.colors.o, c.colors.h, dir, p.sit ? 1 : 0, p.view, p.eyes, p.mouth, p.tilt, p.hx, p.hy, p.lean, p.chest, p.hair,
+    p.near, p.far, p.kick, p.kick2, p.tap, p.hipY, p.nx, p.ny, p.ns, p.fx, p.fy, p.fs].join();
+  let cv = POSES.get(key);
+  if (cv) return cv;
+  if (POSES.size >= 160){
+    const [old, spare] = POSES.entries().next().value;
+    POSES.delete(old); cv = spare;
+  } else cv = Object.assign(document.createElement('canvas'), {width: RIG_W, height: RIG_H});
+  rigPaint(c, p);
+  const pal = rigPalette(c.colors);
+  for (let y = 0; y < RIG_H; y++) for (let x = 0; x < RIG_W; x++)
+    rigOut[y * RIG_W + (dir < 0 ? RIG_W - 1 - x : x)] = pal[rigPx[y * RIG_W + x]];
+  cv.getContext('2d').putImageData(rigImg, 0, 0);
+  POSES.set(key, cv);
+  return cv;
+}
+// draw a pose with the sprite's corner at canvas pixel (X, Y)
+function rigDraw(g, c, p, X, Y, dir = 1){
+  g.drawImage(rigFrame(c, p, dir), dir < 0 ? X + 24 - RIG_W + RIG_X : X - RIG_X, Y - RIG_Y);
+}
+
+// ---- walking ----
+// A step is measured in the ground it covers, and a foot on the ground moves back at exactly
+// the ground's speed, so it can't slide. step: canvas pixels per step, duty: how much of its
+// cycle a foot spends on the ground, lift: how high it clears it, swing: how far the hands go.
+const GAITS = {
+  walk: {step: 10, duty: .6, lift: 3, swing: 5, lean: 1, reach: 11},
+  jog:  {step: 18, duty: .36, lift: 5, swing: 6, lean: 2, reach: 8},
+};
+function footAt(u, g){
+  const travel = 2 * g.step * g.duty;
+  if (u < g.duty){
+    const p = u / g.duty;
+    return {x: travel * (.5 - p), y: p > .72 ? (p - .72) / .28 * 2 : 0, shoe: p < .1 ? 'up' : p > .84 ? 'down' : 'flat'};
+  }
+  const p = (u - g.duty) / (1 - g.duty), e = p * p * (3 - 2 * p);
+  return {x: travel * (e - .5), y: 2 * (1 - p) + g.lift * Math.sin(Math.PI * p), shoe: p < .45 ? 'down' : p > .86 ? 'up' : 'flat'};
+}
+// the legs, hips and arm swing at phase u of the two-step cycle (near foot lands at 0)
+function gaitPose(u, g, w = 1){
+  const near = footAt(u, g), far = footAt((u + .5) % 1, g), a = -Math.cos(u * Math.PI * 2);
+  const up = Math.cos((u - g.duty / 2) * Math.PI * 4);
+  const hipY = g === GAITS.jog ? -Math.round(Math.max(0, -up) * 2) : Math.round((1 - up) / 2 * w);
+  return {
+    hipY, lean: Math.round(g.lean * w),
+    nx: Math.round(near.x * w), ny: Math.round(near.y * w), ns: w > .5 ? near.shoe : 'flat',
+    fx: Math.round(far.x * w + 3 * (1 - w)), fy: Math.round(far.y * w), fs: w > .5 ? far.shoe : 'flat',
+    near: [Math.round(9 + a * g.swing * w), Math.round(22 + hipY + g.reach - Math.max(0, a) * 2.5 * w)],
+    far: [Math.round(15 - a * g.swing * 1.2 * w), Math.round(22 + hipY + g.reach - Math.max(0, -a) * 2.5 * w)],
+    hair: Math.round((-1.5 + Math.sin(u * Math.PI * 4) * .8) * w),
+  };
+}
+const REST = {view: 'R', eyes: 'open', mouth: 'none', tilt: 0, hx: 0, hy: 0, lean: 0, chest: 0, hair: 0, kick: 0, kick2: 0, tap: 0, hipY: 0, nx: 0, ny: 0, ns: 'flat', fx: 3, fy: 0, fs: 'flat'};
+const SEAT_ROW = 32;   // the canvas row of the sitting pose that rests on the seat
+
+// ---------- a little life ----------
+// People breathe, blink and let their heads drift all the time. Every so often they do
+// something: a yawn, a stretch, a hand through the hair. An action is a list of poses on a
+// clock, [seconds, changes], and the body glides from each pose to the next. Hands are given
+// in canvas pixels from the sprite's corner, plus the bend rigArm takes; null puts a hand back
+// where it rests. A pose marked flow doesn't stop: the hand sweeps on through it.
+const ACTIONS = {
+  wink: [[.12, {view: 'Q'}], [.24, {view: 'F', mouth: 'smile'}],
+    [.8, {eyes: 'wink', tilt: 3, fx: 'glint'}], [1.15, {eyes: 'open', tilt: 0}], [1.6, {}],
+    [1.72, {view: 'Q', mouth: 'none'}], [1.84, {view: 'R'}]],
+  look: [[.12, {view: 'Q'}], [.24, {view: 'F'}], [.9, {}], [1, {eyes: 'shut'}], [1.12, {eyes: 'open', mouth: 'smile'}], [2, {}],
+    [2.12, {view: 'Q', mouth: 'none'}], [2.24, {view: 'R'}]],
+  back: [[.12, {view: 'Q'}], [.24, {view: 'F'}], [.36, {view: 'L'}], [1.1, {}], [1.2, {eyes: 'shut'}], [1.3, {eyes: 'open'}], [1.9, {}],
+    [2.02, {view: 'F'}], [2.14, {view: 'Q'}], [2.26, {view: 'R'}]],
+  sky: [[.6, {tilt: -9, eyes: 'up'}], [2.2, {}], [2.3, {eyes: 'shut'}], [2.4, {eyes: 'up'}], [3, {}], [3.5, {tilt: 0, eyes: 'open'}]],
+  muse: [[.5, {tilt: 6, eyes: 'down'}], [2.4, {}], [2.5, {eyes: 'shut'}], [2.62, {eyes: 'down'}], [3.2, {}], [3.7, {tilt: 0, eyes: 'open'}]],
+  yawn: [[.5, {tilt: -3, chest: -1, eyes: 'half', mouth: 'o'}],
+    [1, {tilt: -9, hy: -1, chest: -2, eyes: 'squint', mouth: 'ah', near: [23, 19]}], [1.3, {tilt: -12, mouth: 'wide'}], [2.2, {near: [23, 18]}],
+    [2.6, {tilt: -6, hy: 0, chest: -1, eyes: 'shut', mouth: 'o'}], [3, {tilt: 0, chest: 0, eyes: 'half', mouth: 'none', near: null}],
+    [3.5, {}], [3.6, {eyes: 'shut'}], [3.75, {eyes: 'half'}], [4.1, {eyes: 'open'}]],
+  stretch: [[.45, {chest: -1, tilt: -3, eyes: 'half', near: [1, 18], far: [22, 18]}],
+    [1, {chest: -2, hy: -1, tilt: -9, eyes: 'shut', mouth: 'o', near: [-4, 5, 0], far: [27, 5, 0]}],
+    [1.8, {chest: -3, tilt: -12, near: [-5, 3, 0], far: [28, 3, 0]}], [2.3, {}],
+    [2.8, {chest: -1, hy: 0, tilt: -3, mouth: 'none', near: [0, 20], far: [23, 20]}], [3.3, {chest: 0, tilt: 0, near: null, far: null}], [3.6, {eyes: 'open'}]],
+  hair: [[.45, {tilt: 3, eyes: 'half', near: [17, 4, -1]}], [.85, {flow: 1, tilt: -3, eyes: 'shut', near: [10, -1, -1]}],
+    [1.2, {flow: 1, tilt: -6, near: [1, 5, -1], hair: -2}], [1.6, {flow: 1, near: [-2, 15, -1], hair: -4}], [2, {tilt: -3, near: [-1, 24, -1], hair: -2}],
+    [2.45, {tilt: 0, eyes: 'open', near: null, hair: 2}], [2.85, {hair: -1}], [3.15, {hair: 0}]],
+  hairShort: [[.45, {tilt: 3, eyes: 'half', near: [17, 4, -1]}], [.85, {flow: 1, tilt: -3, eyes: 'shut', near: [10, -1, -1]}], [1.2, {tilt: -6, near: [3, 5, -1]}],
+    [1.38, {near: [6, 3, -1]}], [1.56, {near: [3, 6, -1]}], [1.74, {near: [6, 4, -1]}], [1.92, {near: [4, 6, -1]}], [2.4, {tilt: 0, eyes: 'open', near: null}]],
+  cough: [[.3, {near: [22, 17], tilt: 3, eyes: 'half'}],
+    [.42, {tilt: 9, hy: 1, chest: 1, eyes: 'shut', mouth: 'o', fx: 'puff'}], [.58, {tilt: 3, hy: 0, chest: 0}],
+    [.74, {tilt: 9, hy: 1, chest: 1, fx: 'puff'}], [.9, {tilt: 3, hy: 0, chest: 0}],
+    [1.04, {tilt: 6, hy: 1, chest: 1, fx: 'puff'}], [1.25, {tilt: 0, hy: 0, chest: 0, mouth: 'none', eyes: 'half'}], [1.6, {near: null}], [1.9, {eyes: 'open'}]],
+  sneeze: [[.35, {tilt: -3, eyes: 'half'}], [.75, {tilt: -6, mouth: 'o', chest: -1}], [.95, {tilt: -3}],
+    [1.35, {tilt: -12, hy: -1, lean: -1, eyes: 'squint', mouth: 'ah', chest: -2, near: [23, 20]}], [1.6, {}],
+    [1.68, {tilt: 12, hy: 1, lean: 2, chest: 2, eyes: 'shut', mouth: 'o', near: [24, 18], fx: 'sneeze'}], [1.85, {tilt: 9}],
+    [2.2, {tilt: 0, hy: 0, lean: 0, chest: 0, mouth: 'none'}], [2.35, {eyes: 'open', near: [24, 16]}], [2.5, {near: [22, 15]}], [2.62, {near: [24, 16]}],
+    [2.95, {near: null}], [3.05, {eyes: 'shut'}], [3.15, {eyes: 'open'}]],
+  rub: [[.45, {near: [18, 11], eyes: 'shut', tilt: 3}], [.6, {near: [17, 10]}], [.75, {near: [19, 11]}], [.9, {near: [17, 10]}], [1.05, {near: [19, 11]}],
+    [1.4, {near: null, eyes: 'half', tilt: 0}], [1.9, {eyes: 'open'}]],
+  sigh: [[.9, {chest: -2, hy: -1, tilt: -3, eyes: 'shut'}], [1.3, {}], [2.2, {chest: 0, hy: 0, tilt: 3, mouth: 'o'}], [2.5, {mouth: 'none'}], [2.9, {tilt: 0, eyes: 'open'}]],
+  relax: [[.6, {near: [3, 7, -1], far: [4, 7, -1], tilt: -6, eyes: 'shut', lean: -1}], [4.2, {}], [4.8, {near: null, far: null, tilt: 0, eyes: 'open', lean: 0}]],
+  shift: [[.4, {lean: -1, chest: -1}], [.8, {lean: -1, chest: 0}], [1.2, {lean: 0}]],
+  // along with the music
+  nod: [[.4, {nod: 1, eyes: 'half'}], [5, {}], [5.4, {nod: 0, eyes: 'open'}]],
+  dangle: [[.8, {kick: 2}], [5.5, {}], [6.5, {kick: 0}]],
+  tap: [[.2, {foot: 1}], [4.8, {}], [5, {foot: 0}]],
+  // only where the place calls for it
+  warm: [[.7, {near: [26, 25], far: [27, 24], eyes: 'half', lean: 1}], [1.5, {near: [27, 24], far: [26, 25]}], [2.3, {near: [26, 25], far: [27, 24]}], [3.1, {near: [27, 24], far: [26, 25]}], [3.9, {}],
+    [4.6, {near: null, far: null, eyes: 'open', lean: 0}]],
+  shade: [[.5, {near: [21, 7], tilt: -3, eyes: 'half'}], [2.6, {}], [3.1, {near: null, tilt: 0, eyes: 'open'}]],
+  desk: [[.5, {near: [25, 23], drum: 1}], [3.6, {}], [4.1, {near: null, drum: 0}]],
+};
+// fill in every pose, so each one says everything
+const POSE0 = {tilt: 0, hx: 0, hy: 0, lean: 0, chest: 0, hair: 0, kick: 0, nod: 0, foot: 0, drum: 0, near: null, far: null, view: 'R', eyes: 'open', mouth: 'none'};
+for (const name of Object.keys(ACTIONS)){
+  const keys = [[0, {...POSE0}]];
+  for (const [at, ch] of ACTIONS[name]) keys.push([at, {...keys[keys.length - 1][1], fx: undefined, flow: 0, ...ch}]);
+  ACTIONS[name] = {keys, dur: keys[keys.length - 1][0]};
+}
+function actionAt(act, at){
+  const {keys} = act;
+  let i = 1;
+  while (i < keys.length - 1 && keys[i][0] < at) i++;
+  const [t0, A] = keys[i - 1], [t1, B] = keys[i], raw = clamp((at - t0) / Math.max(.001, t1 - t0), 0, 1);
+  const u = A.flow && B.flow ? raw : A.flow ? 1 - (1 - raw) ** 2 : B.flow ? raw * raw : raw * raw * (3 - 2 * raw);
+  const out = {view: raw >= 1 ? B.view : A.view, eyes: raw >= 1 ? B.eyes : A.eyes, mouth: raw >= 1 ? B.mouth : A.mouth};
+  for (const f of ['tilt', 'hx', 'hy', 'lean', 'chest', 'hair', 'kick', 'nod', 'foot', 'drum']) out[f] = lerp(A[f], B[f], u);
+  for (const f of ['near', 'far']){
+    const a = A[f], b = B[f];
+    if (a && b){ out[f] = [lerp(a[0], b[0], u), lerp(a[1], b[1], u), lerp(a[2] ?? 1, b[2] ?? 1, u)]; out[f + 'W'] = 1; }
+    else if (a || b){ out[f] = a || b; out[f + 'W'] = a ? 1 - u : u; }
+    else out[f + 'W'] = 0;
+  }
+  return out;
+}
+const POSE_IDLE = actionAt({keys: [[0, POSE0], [1, POSE0]]}, 0);
+const life = {sid: null, who: null, met: false, playing: false, next: null, act: null, name: '', at: 0, rate: 1, wait: 99, dt: 0, nod: 0, soft: null, bag: [], breath: Math.random() * 6, blinkIn: 2, blink: 0, tilt: 0, tiltTo: 0, tiltIn: 4, fx: [], sneezed: 0};
+// They work through everything once, in a new order each time, before anything comes round again.
+const ALWAYS = ['look', 'back', 'sky', 'muse', 'yawn', 'stretch', 'hair', 'cough', 'sneeze', 'rub', 'sigh', 'relax', 'wink', 'nod'];
+const SITTING = ['shift', 'dangle', 'tap'], WITH_MUSIC = new Set(['nod', 'tap', 'desk']);
+const LOCAL = {forest: ['warm', 'warm', 'sky'], lake: ['sky'], garden: ['shade'], park: ['shade'], beach: ['shade'], office: ['desk', 'desk']};
+function nextAction(seated){
+  for (;;){
+    if (!life.bag.length) life.bag = [...ALWAYS, ...(seated ? SITTING : []), ...(LOCAL[life.sid] || [])].sort(() => Math.random() - .5);
+    const first = !life.met;
+    life.met = true;
+    if (first) return 'wink';    // the first thing they do is say hello
+    const name = life.bag.pop();
+    if (!WITH_MUSIC.has(name) || playing) return name === 'hair' && !(CHARS[life.who] || CHARS.guy).longHair ? 'hairShort' : name;
+  }
+}
+function lifeTick(dt, sid, who, seated){
+  if (life.sid !== sid || life.who !== who){
+    life.sid = sid; life.who = who; life.act = null; life.soft = null; life.bag = []; life.wait = Math.min(life.wait, 1.5 + Math.random() * 2); life.fx.length = 0; life.tilt = life.tiltTo = 0;
+  }
+  life.dt = dt;
+  life.nod += (scene.q - life.nod) * Math.min(1, dt * 12);
+  if (playing !== life.playing){
+    life.playing = playing;
+    if (playing && !life.act && life.met) life.wait = 0, life.next = 'nod';   // the music starts and they feel it
+  }
+  life.sneezed = Math.max(0, life.sneezed - dt);
+  if (life.blink > 0) life.blink -= dt;
+  else if ((life.blinkIn -= dt) <= 0){
+    life.blink = .13;
+    life.blinkIn = Math.random() < .18 ? .22 : 2 + Math.random() * 4.5;  // now and then a double blink
+  }
+  if (reduceMotion) return;
+  life.breath += dt * 1.5;
+  if ((life.tiltIn -= dt) <= 0){ life.tiltTo = [-3, 0, 0, 3][Math.floor(Math.random() * 4)]; life.tiltIn = 3 + Math.random() * 5; }
+  life.tilt += (life.tiltTo - life.tilt) * Math.min(1, dt * 2);
+  if (life.act){
+    const before = life.at;
+    life.at += dt * life.rate;
+    for (const [at, k] of life.act.keys) if (k.fx && before < at && life.at >= at) lifeFx(k.fx);
+    if (life.at >= life.act.dur){ life.act = null; life.wait = 6 + Math.random() * 7; }
+  } else if ((life.wait -= dt) <= 0){
+    life.name = life.next || nextAction(seated); life.next = null;
+    life.act = ACTIONS[life.name]; life.at = 0; life.rate = .92 + Math.random() * .16;
+  }
+}
+// puffs and sparkles, in scene coordinates, drawn over everything
+function lifeFx(kind){
+  const X = scene.heroX, Y = scene.heroY, add = (x, y, vx, vy, max, c) => life.fx.push({x, y, vx, vy, age: 0, max, c});
+  if (kind === 'puff') for (let i = 0; i < 3; i++) add(X + 12.5, Y + 8, 7 + Math.random() * 8, -2 - Math.random() * 5, .45 + Math.random() * .2, '#f4f0f8');
+  else if (kind === 'sneeze'){
+    life.sneezed = .4;
+    for (let i = 0; i < 12; i++) add(X + 13, Y + 8, 22 + Math.random() * 34, (Math.random() - .55) * 22, .4 + Math.random() * .4, '#f4f0f8');
+  } else if (kind === 'glint') life.fx.push({x: X + 9, y: Y + 3, vx: 0, vy: 0, age: 0, max: .32, c: '#fff6c8', star: true});
+}
+function lifeFxDraw(k, dt){
+  for (const f of life.fx){
+    f.age += dt; f.x += f.vx * dt; f.y += f.vy * dt; f.vx *= Math.pow(.05, dt);
+    const fade = 1 - f.age / f.max;
+    if (fade <= 0) continue;
+    if (f.star){
+      const r = f.age < f.max * .3 || f.age > f.max * .7 ? .5 : 1.5;
+      k.rect(f.x - r, f.y, r * 2 + .5, .5, f.c); k.rect(f.x, f.y - r, .5, r * 2 + .5, f.c);
+    } else {
+      k.g.globalAlpha = Math.min(1, fade * 1.6);
+      k.rect(f.x, f.y, .5, .5, f.c);
+      k.g.globalAlpha = 1;
+    }
+  }
+  life.fx = life.fx.filter(f => f.age < f.max);
+}
+// lay what they're doing over a base pose (sitting or walking), hands resting where it says
+function livePose(base, live){
+  const a = live && life.act ? actionAt(life.act, life.at) : POSE_IDLE;
+  const breath = live && !reduceMotion ? (Math.sin(life.breath) * .5 - .5) * (base.sit ? 1 : 1 - scene.walk) : 0;
+  const p = {...base};
+  p.view = a.view; p.mouth = a.mouth;
+  p.eyes = live && life.blink > 0 && (a.eyes === 'open' || a.eyes === 'half' || a.eyes === 'up') ? 'shut' : a.eyes;
+  // everything glides toward where the action says it should be, so nothing snaps into place
+  const want = {tilt: a.tilt + a.nod * life.nod * 8 + (live ? life.tilt : 0), hx: (base.hx || 0) + a.hx, hy: a.hy, lean: (base.lean || 0) + a.lean, chest: a.chest + breath, hair: (base.hair || 0) + a.hair};
+  const ox = want.lean + want.hx, oy = want.chest + want.hy + (base.hipY || 0);
+  const hand = (rest, T, w) => {
+    if (!w || !T) return [rest[0], rest[1], 1];
+    return [lerp(rest[0], T[0] + ox, w), lerp(rest[1], T[1] + oy, w), lerp(1, T[2] ?? 1, w)];
+  };
+  want.near = hand(base.near, a.near, a.nearW);
+  want.far = hand(base.far, a.far, a.farW);
+  let s = want;
+  if (live && life.dt > 0){
+    const k = 1 - Math.exp(-life.dt / .05), o = life.soft || want;
+    s = {};
+    for (const f of ['tilt', 'hx', 'hy', 'lean', 'chest', 'hair']) s[f] = lerp(o[f], want[f], k);
+    for (const f of ['near', 'far']) s[f] = o[f].map((v, i) => lerp(v, want[f][i], k));
+    life.soft = s;
+  }
+  p.tilt = Math.round(s.tilt / 3) * 3;
+  p.hx = Math.round(s.hx); p.hy = Math.round(s.hy); p.lean = Math.round(s.lean); p.chest = Math.round(s.chest); p.hair = Math.round(s.hair);
+  const pixel = h => { const r = [Math.round(h[0]), Math.round(h[1])], b = Math.round(h[2] * 4) / 4; if (b !== 1) r.push(b); return r; };
+  p.near = pixel(s.near); p.far = pixel(s.far);
+  if (a.drum > .5 && life.nod > .4) p.near[1]--;   // fingers on the desk, in time
+  p.kick = Math.round(Math.sin(life.breath * 2.2) * a.kick);   // dangling feet, in no hurry
+  p.kick2 = -p.kick;
+  p.tap = a.foot > .5 && life.nod > .4 ? 1 : 0;
+  return p;
+}
 
 // ---------- living foliage ----------
 // Trees, bushes and hedges are painted the way a pixel artist paints them: crowns made
@@ -3276,7 +3774,7 @@ function birdLife(k, t, dt, key, n, perches, kinds, opts = {}){
       }
       if (b.act === 'hop'){ b.hopT = Math.min(1, b.hopT + dt / .45); b.x = b.hopFrom + (b.hopTo - b.hopFrom) * b.hopT; b.hop = Math.sin(Math.PI * b.hopT) * 2; }
       else b.hop = 0, b.x = b.x ?? b.spot.x;
-      const spooked = opts.scare && opts.scare(b.x, b.y);
+      const spooked = (opts.scare && opts.scare(b.x, b.y)) || (life.sneezed > 0 && Math.hypot(b.x - scene.heroX, b.y - scene.heroY) < 70);
       if (b.stay <= 0 || spooked){
         const right = spooked ? Math.random() < .5 : b.dir > 0;
         b.state = 'out'; b.u = 0; b.from = {x: b.x, y: b.y}; b.dir = right ? 1 : -1;
@@ -3374,18 +3872,16 @@ const parkBusy = (x, y) => (x > 134 && x < 196 && y < 128) || (x > 206 && x < 22
 // ---- people strolling through the park ----
 // They reuse the hoodie templates with their own colours; mapping the headphone
 // pixels (p, P) to the hair colour takes the headphones off.
-const flipRows = rows => { const w = Math.max(...rows.map(r => r.length)); return rows.map(r => [...r.padEnd(w, '.')].reverse().join('')); };
 const FOLK = {
-  lady:   {head: HEAD_GIRL, body: BODY_GIRL, colors: {_flat:1, k:'#1a1020', h:'#7a4a2a', H:'#a8703e', s:'#e8b48a', S:'#c48a64', e:'#1a1020', r:'#e88a8a',
+  lady:   {...LOOK_GIRL, colors: {_flat:1, k:'#1a1020', h:'#7a4a2a', H:'#a8703e', s:'#e8b48a', S:'#c48a64', e:'#1a1020', r:'#e88a8a',
            p:'#7a4a2a', P:'#7a4a2a', o:'#4a8ab0', O:'#2e6a8a', L:'#7ab8d8', d:'#4a8ab0', j:'#2a2438', J:'#1e1a2c', w:'#c2334d'}},
-  walker: {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#a8a8b4', H:'#d8d8e0', s:'#d8a07a', S:'#b47e5a', e:'#1a1020',
+  walker: {...LOOK_GUY, colors: {_flat:1, k:'#1a1020', h:'#a8a8b4', H:'#d8d8e0', s:'#d8a07a', S:'#b47e5a', e:'#1a1020',
            p:'#a8a8b4', P:'#a8a8b4', o:'#4f7a3a', O:'#36582a', L:'#78a856', d:'#4f7a3a', j:'#3a4a78', J:'#28345a', w:'#6b4426'}},
-  runner: {head: HEAD_GUY, body: BODY_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1a12', H:'#4a3020', s:'#9a6440', S:'#7a4a2c', e:'#1a1020',
+  runner: {...LOOK_GUY, colors: {_flat:1, k:'#1a1020', h:'#2a1a12', H:'#4a3020', s:'#9a6440', S:'#7a4a2c', e:'#1a1020',
            p:'#f4f0f8', P:'#4fd1c5', o:'#e04a4a', O:'#a83030', L:'#ff7a6a', d:'#e04a4a', j:'#2a2a36', J:'#1a1a24', w:'#4fd1c5'}},
 };
-function drawFolk(k, f, x, gy, dir, frame, bob = 0){
-  const rows = [...f.head, ...f.body, ...LEGS_WALK[frame]];
-  k.sprite(dir > 0 ? rows : flipRows(rows), f.colors, x, gy - rows.length - bob);
+function drawFolk(k, f, x, gy, dir, gait, u, hands){
+  rigDraw(k.g, f, {...REST, ...gaitPose(u, gait), ...hands}, Math.round(x * HD), Math.round(gy * HD) - RIG_GROUND, dir);
 }
 // a pram, 13 wide; its handle reaches back toward whoever is pushing
 function drawPram(k, x, gy, dir, bob){
@@ -3421,18 +3917,17 @@ function parkFolk(k, t, dt){
   }
   for (const w of [...folk].sort((a, b) => a.gy - b.gy)){
     if (w.x < -50 || w.x > SW + 50) continue;
-    const frame = Math.floor(w.d / (w.kind === 'jogger' ? 4 : 3)) % 2;
+    const gait = w.kind === 'jogger' ? GAITS.jog : GAITS.walk, u = w.d * HD / gait.step / 2 % 1, frame = Math.floor(u * 4) % 2;
     k.rect(w.x + 2, w.gy - .5, 8, .5, 'rgba(60,40,20,.25)');
     if (w.kind === 'stroller'){
       drawPram(k, w.dir > 0 ? w.x + 12 : w.x - 14, w.gy, w.dir, frame ? .5 : 0);
-      drawFolk(k, FOLK.lady, w.x, w.gy, w.dir, frame);
-      k.rect(w.dir > 0 ? w.x + 9 : w.x + .5, w.gy - 9.5, 2.5, 1, FOLK.lady.colors.o);
+      drawFolk(k, FOLK.lady, w.x, w.gy, w.dir, gait, u, {near: [24, 26], far: [25, 26]});
     } else if (w.kind === 'dog'){
       const dx = w.dir > 0 ? w.x + 17 : w.x - 19, hx = w.dir > 0 ? w.x + 10 : w.x + 2, cx = w.dir > 0 ? dx + 10 : dx + 4;
       drawDog(k, dx, w.gy + .5, w.dir, w.d * .9);
       for (let j = 0; j <= 10; j++){ const tt = j / 10; k.rect(hx + (cx - hx) * tt, w.gy - 7 + (-.5) * tt + Math.sin(Math.PI * tt) * 1.5, .5, .5, '#c2334d'); }
-      drawFolk(k, FOLK.walker, w.x, w.gy, w.dir, frame);
-    } else drawFolk(k, FOLK.runner, w.x, w.gy, w.dir, frame, frame ? .5 : 0);
+      drawFolk(k, FOLK.walker, w.x, w.gy, w.dir, gait, u, {near: [21, 26]});
+    } else drawFolk(k, FOLK.runner, w.x, w.gy, w.dir, gait, u);
   }
 }
 
@@ -3527,16 +4022,17 @@ function spectrum(n, t){
   return st.v.slice();
 }
 function sitHero(k, x, seatY){
-  const c = CHARS[k.who] || CHARS.guy, y = seatY - SEAT_ROW - (scene.beat > .6 ? .5 : 0);
-  k.sprite([...c.head, ...c.body, ...LEGS_SIT], c.colors, x, y);
-  scene.heroX = x; scene.heroY = y;
+  const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(seatY * HD) - SEAT_ROW;
+  scene.heroX = x; scene.heroY = Y / HD;
+  rigDraw(k.g, c, livePose({...REST, sit: true, near: [16, 28], far: [18, 27]}, k.live), X, Y);
 }
 function walkHero(k, x, groundY){
-  const c = CHARS[k.who] || CHARS.guy, frame = playing ? scene.step % 2 : 1;
-  const rows = [...c.head, ...c.body, ...LEGS_WALK[frame]];
-  const y = groundY - rows.length - (playing && frame ? .5 : 0);
-  k.sprite(rows, c.colors, x, y);
-  scene.heroX = x; scene.heroY = y;
+  const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(groundY * HD) - RIG_GROUND;
+  scene.heroX = x; scene.heroY = Y / HD;
+  // in the cover art they're always mid-stride
+  const u = k.live || playing ? scene.scroll / STRIDE / 2 % 1 : .03, w = k.live ? scene.walk : 1;
+  k.rect(x + 2, groundY - .5, 9, .5, 'rgba(30,16,30,.2)');
+  rigDraw(k.g, c, livePose({...REST, sit: false, ...gaitPose(u, GAITS.walk, w)}, k.live), X, Y);
 }
 function rainIn(k, dt, x, y, w, h, n, col, key){
   const drops = pst['rain' + key] ||= [];
@@ -4540,12 +5036,15 @@ const PLACES = {
         gg.fillStyle = '#fff4ff'; gg.fillRect(X, y, 1, 1);
         gg.fillStyle = 'rgba(246,230,255,.5)'; gg.fillRect(X, y + 1 + (X & 1), 1, 1);
       }
-      const sc = scene.scroll;
-      for (let i = 0; i < 60; i++){
-        const wx = 140 - (i * 7 + (sc % 7));
+      // a footprint where each foot came down, fading as the breeze fills them in
+      const lastStep = Math.floor(scene.scroll / STRIDE), sincePrint = scene.scroll - lastStep * STRIDE;
+      for (let i = 0; i < 30; i++){
+        const wx = 147.75 - sincePrint - i * STRIDE;
         if (wx < -4) break;
-        k.rect(wx, 136 + (i % 2) * 2, 1.5, .5, '#a07a50');
+        g.globalAlpha = 1 - i / 30;
+        k.rect(wx, (lastStep - i) % 2 ? 136.5 : 137.5, 2.5, .5, '#a07a50');
       }
+      g.globalAlpha = 1;
       for (const sh of drifting('shells', 7, i => ({x: i * 50 + Math.random() * 40, y: 124 + Math.random() * 22, c: i % 2 ? '#f8e8e0' : '#e8704a'}))){
         sh.x -= scene.speed * dt;
         if (sh.x < -4) sh.x = SW + Math.random() * 40;
@@ -5209,6 +5708,7 @@ async function boot(){
     if (!drawing) drawScene();
   }
   await reveal();
+  life.wait = 2.5;   // give the page a moment before anyone does anything
   hintSwipe();
 }
 boot();

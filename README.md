@@ -10,7 +10,7 @@
 
 <h2><img src="docs/readme/plate-worlds.png" width="100%" alt="A band for every room"></h2>
 
-Eight vibes, eight places, eight bands. Swipe from the castle wall to the rainy office and a boom bap Rhodes gives way to felt piano and deep sub bass. Swipe again and a jazz trio picks up in the coffee shop. The weather, the birds and the lights are painted live in code, and the little monitors and torches react to what's playing.
+Eight vibes, eight places, eight bands. Swipe from the castle wall to the rainy office and a boom bap Rhodes gives way to felt piano and deep sub bass. Swipe again and a jazz trio picks up in the coffee shop. The weather, the birds and the lights are painted live in code, and the little monitors and torches react to what's playing. Whoever's there is alive too: they blink, yawn, stretch, run a hand through their hair, sneeze hard enough to send the birds off, and now and then turn and wink at you.
 
 <table>
 <tr>
