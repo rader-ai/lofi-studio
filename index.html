@@ -597,6 +597,8 @@
   @container pages (max-height:300px){ html.simple .swipe-hint{display:none} }
   @container pages (max-height:200px){ html.simple .now-vibe{padding:7px 10px} html.simple .now-vibe .ic{font-size:20px} html.simple #vibeNote:empty{display:none} }
   html.simple .simple-only{display:inline} html.simple .wide-only{display:none}
+  /* the Vintage slider already moves dust and wobble together, so a phone skips the separate pair */
+  html.simple .fine .tape{display:none}
   html.simple .al-top{flex:none}
   html.simple .carousel,html.simple .car-dots{display:none}
   html.simple .ad-info{grid-template-columns:minmax(0,1fr) auto;align-content:start}
@@ -789,12 +791,16 @@
           <h3>Fine-tune</h3>
           <label>Key<select id="key"></select></label>
           <label>Chords<select id="prog"></select></label>
-          <label>Piano<select id="keys">
+          <label>Groove<select id="style"></select></label>
+          <label>Keys<select id="keys">
             <option value="rhodes">Rhodes</option>
             <option value="felt">Soft felt</option>
+            <option value="wurli">Wurlitzer</option>
+            <option value="organ">Organ</option>
+            <option value="guitar">Guitar</option>
           </select></label>
-          <label>Dust <output id="dustOut"></output><input id="dust" type="range" min="0" max="1" step="0.01"></label>
-          <label>Wobble <output id="wobbleOut"></output><input id="wobble" type="range" min="0" max="1" step="0.01"></label>
+          <label class="tape">Dust <output id="dustOut"></output><input id="dust" type="range" min="0" max="1" step="0.01"></label>
+          <label class="tape">Wobble <output id="wobbleOut"></output><input id="wobble" type="range" min="0" max="1" step="0.01"></label>
           <p class="code" title="The same vibe with the same code always plays the same song">Track code <code id="seedLbl"></code><small>same vibe + code = same song</small></p>
         </div>
       </div>
@@ -837,7 +843,7 @@
   <h2>How it works</h2>
   <ol>
     <li><b>Vibe.</b> <span class="wide-only">Tap a vibe and music starts.</span><span class="simple-only">Swipe the scene, or tap its arrows, and the next vibe plays in a place of its own.</span> You can also type a description and hit BREW.</li>
-    <li><b>Shape.</b> Drag the sliders while it plays: speed, bounce, how old it sounds, how much space. Fine-tune the key, chords and piano there too.</li>
+    <li><b>Shape.</b> Drag the sliders while it plays: speed, bounce, how old it sounds, how much space. Fine-tune the key, chords, groove and instrument there too.</li>
     <li><b>Mix.</b> Turn parts like drums or rain on and off, and set how loud each one is.</li>
   </ol>
   <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
@@ -919,6 +925,93 @@ const BASS_PATTERNS = [
   [[0,10,0],[12,3,7]],
 ];
 
+// ---------- styles ----------
+// How a song is played: its groove and drum kit, how the keys comp, how the bass moves and
+// which instrument carries the tune. Every chord progression has a style that suits it, so
+// each vibe sounds like itself, and a song's seed picks among the style's options, so "try
+// another" can land on a different groove, comping, bass line or lead without leaving the vibe.
+const STYLES = {
+  boombap:  {name:'boom bap',     beats:4, grooves:['boombap','boombapOpen'], comps:['stabs','sustain'], basses:['roots','push'], leads:['vibes','flute','pluck'], kit:'dusty', bassTone:'round'},
+  halftime: {name:'half-time',    beats:4, grooves:['halftime'], comps:['arp','sustain'], basses:['sub','roots'], leads:['musicbox','flute'], kit:'soft', bassTone:'sub', density:.8},
+  jazz:     {name:'jazz trio',    beats:4, grooves:['swing'], comps:['charleston','stabs'], basses:['walking'], leads:['vibes','flute'], kit:'brush', bassTone:'upright', swingSub:'8n', density:1.35, scale:'full'},
+  sunny:    {name:'sunny bounce', beats:4, grooves:['bounce'], comps:['strum','arp'], basses:['octave','roots'], leads:['pluck','flute','vibes'], kit:'bright', bassTone:'round', density:1.15},
+  neosoul:  {name:'neo-soul',     beats:4, grooves:['dilla'], comps:['push','stabs'], basses:['syncopated'], leads:['synth','vibes'], kit:'boombap', bassTone:'synth'},
+  ambient:  {name:'ambient',      beats:4, grooves:['none','shaker'], comps:['arp','swell'], basses:['sub'], leads:['musicbox','flute'], kit:'soft', bassTone:'sub', density:.55, grid:4},
+  bossa:    {name:'bossa nova',   beats:4, grooves:['bossa'], comps:['bossa'], basses:['bossa'], leads:['flute','pluck','vibes'], kit:'bossa', bassTone:'upright', straight:true, density:1.1, scale:'full'},
+  waltz:    {name:'waltz',        beats:3, grooves:['waltz'], comps:['waltz','arp'], basses:['waltz'], leads:['musicbox','vibes','flute'], kit:'brush', bassTone:'round', swingSub:'8n', scale:'full'},
+};
+const PROG_STYLE = {latenight:'boombap', rainy:'halftime', jazzhop:'jazz', sunday:'sunny', neosoul:'neosoul', dreamy:'ambient', nostalgic:'bossa', bittersweet:'waltz'};
+const styleOf = s => STYLES[s.style] ? s.style : PROG_STYLE[s.prog] || 'boombap';
+
+// how the keys play a bar: [step, length in 16ths, velocity] ("stabs" uses the seed's
+// pattern above; "arp", "strum" and "swell" are played note by note in the sequencer)
+const COMPS = {
+  sustain:    [[0,15,.7]],
+  charleston: [[0,3,.62],[6,4,.52]],
+  push:       [[0,5,.62],[6,3,.42],[14,2,.5]],
+  bossa:      [[0,2,.55],[3,2,.42],[6,3,.5],[10,2,.42],[12,3,.5]],
+  waltz:      [[4,3,.5],[8,3,.45]],
+};
+const STRUM = [[0,1,.7],[4,1,.5],[6,-1,.42],[10,-1,.4],[12,1,.55],[14,-1,.42]]; // [step, down 1 / up -1, velocity]
+const ARPS = [[0,1,2,3], [0,1,2,3,2,1], [0,2,1,3], [0,3,1,2,3,1]];               // orders through the chord's notes
+
+// how the bass moves: [step, length in 16ths, interval above the root] ("roots" uses the
+// seed's pattern above; "walking" walks quarter notes into the next chord)
+const BASSES = {
+  push:       [[0,6,0],[7,2,0],[10,3,7],[14,2,12]],
+  sub:        [[0,15,0]],
+  octave:     [[0,3,0],[4,2,12],[6,2,0],[8,3,0],[12,2,12],[14,2,7]],
+  syncopated: [[0,3,0],[3,2,0],[6,2,12],[8,2,10],[10,3,0],[14,2,7]],
+  bossa:      [[0,6,0],[6,2,7],[8,6,7],[14,2,0]],
+  waltz:      [[0,5,0],[8,3,7]],
+};
+
+// What the drums play on step s of a bar (16 steps, or 12 in 3/4): voice → velocity.
+const HALF_KICKS = [[0,10], [0,7,10], [0,3,11]];
+const DILLA_KICKS = [[0,10], [0,3,10], [0,7,10,13]];
+const GROOVES = {
+  none: () => ({}),
+  boombap: s => ({kick: pat.kick[s] ? .9 : 0, snare: s === 4 || s === 12 ? .8 : 0,
+    ghost: (s === 7 || s === 15) && rng() < pat.ghost * .5 ? .18 : 0,
+    hat: s % 2 ? (rng() < .12 ? .15 : 0) : s % 4 ? .32 : .55}),
+  boombapOpen: s => ({...GROOVES.boombap(s), hat: s === 14 ? 0 : s % 2 ? 0 : s % 4 ? .3 : .5, open: s === 14 ? .32 : 0}),
+  halftime: (s, bar) => ({kick: pat.half.includes(s) ? .85 : 0, snare: s === 8 ? .75 : 0,
+    rim: s === 14 && bar % 2 ? .3 : 0, hat: s % 2 ? (rng() < .22 ? .1 : 0) : s % 4 ? .18 : .3}),
+  swing: (s, bar) => ({ride: [0, 4, 8, 12].includes(s) ? (s % 8 ? .5 : .42) : s === 6 || s === 14 ? .3 : 0,
+    foot: s === 4 || s === 12 ? .22 : 0, brush: s === 4 || s === 12 ? .4 : 0,
+    kick: s === 0 && bar % 2 === 0 ? .55 : s % 4 === 0 ? .28 : s === 10 && rng() < .2 ? .3 : 0,   // a soft "feathered" kick on every beat
+    ghost: s === 10 && rng() < .15 ? .12 : 0}),
+  bounce: s => ({kick: s === 0 || s === 8 ? .85 : s === 10 ? .6 : 0, clap: s === 4 || s === 12 ? .7 : 0,
+    hat: s % 2 ? .16 : s % 4 ? .3 : .4, shaker: s % 4 === 2 ? .3 : 0}),
+  dilla: s => ({kick: pat.dilla.includes(s) ? .85 : 0, snare: s === 4 || s === 12 ? .75 : 0, late: .022,
+    ghost: (s === 10 || s === 15) && rng() < .4 ? .15 : 0,
+    hat: s % 2 ? (rng() < .55 ? .12 + rng() * .08 : 0) : .3 + rng() * .1}),
+  shaker: s => ({shaker: s % 2 ? 0 : s % 4 ? .15 : .24}),
+  bossa: (s, bar) => ({kick: s === 0 || s === 8 ? .55 : s === 6 || s === 14 ? .35 : 0,
+    rim: (bar % 2 ? [4, 10] : [0, 6, 12]).includes(s) ? .5 : 0,
+    shaker: s % 2 ? .12 : .22}),
+  waltz: s => ({kick: s === 0 ? .7 : 0, brush: s === 4 || s === 8 ? .35 : 0,
+    ride: s % 4 === 0 ? .3 : s === 10 ? .2 : 0, foot: s === 4 || s === 8 ? .15 : 0}),
+};
+
+// the drum kit's tuning, so a brushed jazz kit, a punchy boom-bap kit and a soft ambient kit differ
+const KITS = {
+  dusty:   {kick:{pitchDecay:.04, octaves:5, envelope:{decay:.38}}, snare:{envelope:{decay:.17}}, snareHz:1700, hat:{envelope:{decay:.035}}},
+  boombap: {kick:{pitchDecay:.05, octaves:6, envelope:{decay:.3}},  snare:{envelope:{decay:.22}}, snareHz:2100, hat:{envelope:{decay:.05}}},
+  soft:    {kick:{pitchDecay:.03, octaves:4, envelope:{decay:.55}}, snare:{envelope:{decay:.13}}, snareHz:1300, hat:{envelope:{decay:.03}}},
+  brush:   {kick:{pitchDecay:.02, octaves:3, envelope:{decay:.3}},  snare:{envelope:{decay:.25}}, snareHz:950,  hat:{envelope:{decay:.03}}},
+  bright:  {kick:{pitchDecay:.05, octaves:6, envelope:{decay:.28}}, snare:{envelope:{decay:.2}},  snareHz:2500, hat:{envelope:{decay:.045}}},
+  bossa:   {kick:{pitchDecay:.03, octaves:4, envelope:{decay:.32}}, snare:{envelope:{decay:.1}},  snareHz:1800, hat:{envelope:{decay:.025}}},
+};
+
+// the bass's tone per style: round, a deep sine sub, a plucky upright, a buzzy synth
+const BASS_TONES = {
+  round:   {oscillator:{type:'triangle'}, envelope:{attack:.01, decay:.3, sustain:.7, release:.4}, filterEnvelope:{baseFrequency:120, octaves:2}, volume:0},
+  sub:     {oscillator:{type:'sine'}, envelope:{attack:.03, decay:.4, sustain:.85, release:.8}, filterEnvelope:{baseFrequency:90, octaves:1.5}, volume:-4},
+  upright: {oscillator:{type:'triangle'}, envelope:{attack:.004, decay:.6, sustain:.25, release:.25}, filterEnvelope:{baseFrequency:170, octaves:2.5}, volume:5},
+  synth:   {oscillator:{type:'sawtooth'}, envelope:{attack:.005, decay:.25, sustain:.5, release:.2}, filterEnvelope:{baseFrequency:150, octaves:3}, volume:3},
+};
+
 // ---------- state ----------
 const LAYERS = {
   keys:   {label:'Keys',   db:-9},
@@ -943,11 +1036,11 @@ const PRESETS = {
   'Late Night Study': {prog:'latenight', bpm:74, key:2, keys:'rhodes'},
   'Rainy Window':     {prog:'rainy', bpm:70, key:9, keys:'felt', dust:.65, layers:{rain:{on:true,vol:.55}}},
   'Coffee Shop Jazz': {prog:'jazzhop', bpm:84, key:5, keys:'rhodes', swing:.32},
-  'Sunday Morning':   {prog:'sunday', bpm:86, key:7, keys:'felt', dust:.4, wobble:.25},
-  'Neo-Soul Groove':  {prog:'neosoul', bpm:88, key:3, keys:'rhodes', swing:.36, layers:{drums:{vol:.85}}},
+  'Sunday Morning':   {prog:'sunday', bpm:86, key:7, keys:'guitar', dust:.4, wobble:.25},
+  'Neo-Soul Groove':  {prog:'neosoul', bpm:88, key:3, keys:'wurli', swing:.36, layers:{drums:{vol:.85}}},
   'Sleepy Ambient':   {prog:'dreamy', bpm:62, key:4, keys:'felt', reverb:.6, wobble:.55,
                        layers:{drums:{on:false}, pad:{on:true,vol:.7}, rain:{on:true,vol:.35}}},
-  'Old Tape Memories':{prog:'nostalgic', bpm:76, key:10, dust:.85, wobble:.8},
+  'Old Tape Memories':{prog:'nostalgic', bpm:76, key:10, keys:'organ', dust:.85, wobble:.8},
   'Bittersweet':      {prog:'bittersweet', bpm:78, key:4, keys:'felt'},
 };
 
@@ -978,17 +1071,32 @@ function chordAt(idx){
   let root = 48 + pc; if (root > 53) root -= 12;
   let bass = root - 12; if (bass < 36) bass += 12;
   const shift = deg > 6 ? deg - 12 : deg; // how far this chord sits from the tonic, for pitching chops
-  return {name: NOTES[pc] + (type === 'maj7' ? 'maj7' : type), notes: VOICE[type].map(i => root + i), bass, shift};
+  return {name: NOTES[pc] + (type === 'maj7' ? 'maj7' : type), type, notes: VOICE[type].map(i => root + i), bass, shift};
 }
 
 // ---------- audio graph ----------
 let A = null;
 
+// The keys can be a Rhodes, a soft felt piano, a Wurlitzer, an organ or a nylon-string guitar.
+const KEYS_LP = {rhodes:2800, felt:1700, wurli:2300, organ:1900, guitar:3800};
 function makeKeys(type){
+  if (type === 'guitar') return makeGuitar();
   if (type === 'felt') return new Tone.PolySynth(Tone.Synth, {
     maxPolyphony: 32,
     oscillator:{type:'triangle'},
     envelope:{attack:.004, decay:2.2, sustain:.06, release:1.4},
+  });
+  if (type === 'wurli') return new Tone.PolySynth(Tone.FMSynth, {
+    maxPolyphony: 32, volume: 2,
+    harmonicity: 1, modulationIndex: 5,
+    oscillator:{type:'sine'}, modulation:{type:'triangle'},
+    envelope:{attack:.004, decay:1.2, sustain:.18, release:1},
+    modulationEnvelope:{attack:.002, decay:.3, sustain:.12, release:.4},
+  });
+  if (type === 'organ') return new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 32, volume: -18,
+    oscillator:{type:'custom', partials:[1, .6, .35, 0, .2, 0, .12]},
+    envelope:{attack:.03, decay:.25, sustain:.8, release:.3},
   });
   return new Tone.PolySynth(Tone.FMSynth, {
     maxPolyphony: 32,
@@ -997,6 +1105,58 @@ function makeKeys(type){
     envelope:{attack:.005, decay:1.6, sustain:.25, release:1.4},
     modulationEnvelope:{attack:.002, decay:.6, sustain:.1, release:.6},
   });
+}
+
+// A nylon-string guitar: six plucked strings taken in turn, so a strummed chord rings out.
+// It answers to the same calls as the keyboards.
+function makeGuitar(){
+  const out = new Tone.Gain(2.8);
+  const strings = Array.from({length: 6}, () => {
+    const g = new Tone.Gain(1).connect(out);
+    return {g, p: new Tone.PluckSynth({attackNoise: 1, dampening: 4400, resonance: .975}).connect(g)};
+  });
+  let next = 0;
+  return {
+    triggerAttackRelease(freq, dur, time, vel = .7){
+      const s = strings[next++ % strings.length];
+      s.g.gain.setValueAtTime(vel, time);
+      s.p.triggerAttack(freq, time);
+    },
+    releaseAll(){},
+    connect(node){ out.connect(node); return this; },
+    disconnect(){ out.disconnect(); },
+    dispose(){ for (const s of strings){ s.p.dispose(); s.g.dispose(); } out.dispose(); },
+  };
+}
+
+// The tune on top: a vibraphone, a flute, a music box (an octave up), a plucked guitar or a
+// soft square-wave synth that glides between notes.
+function makeLead(type, dest){
+  const nodes = [], keep = n => (nodes.push(n), n);
+  let voice;
+  if (type === 'flute'){
+    const vib = keep(new Tone.Vibrato({frequency: 4.8, depth: .08})).connect(dest);
+    voice = keep(new Tone.Synth({oscillator:{type:'sine'}, envelope:{attack:.07, decay:.25, sustain:.7, release:.45}, volume: -18})).connect(vib);
+  } else if (type === 'pluck'){
+    voice = keep(new Tone.PluckSynth({attackNoise: 1.1, dampening: 3800, resonance: .95, volume: 9})).connect(dest);
+  } else if (type === 'synth'){
+    voice = keep(new Tone.MonoSynth({oscillator:{type:'square'}, portamento: .035, volume: -20,
+      filter:{Q: 2, type:'lowpass', rolloff: -24},
+      envelope:{attack:.015, decay:.3, sustain:.45, release:.35},
+      filterEnvelope:{attack:.01, decay:.25, sustain:.3, release:.3, baseFrequency: 500, octaves: 2.6}})).connect(dest);
+  } else if (type === 'musicbox'){
+    voice = keep(new Tone.FMSynth({harmonicity: 7, modulationIndex: 2.2, volume: 0,
+      envelope:{attack:.001, decay:.9, sustain:0, release:.9},
+      modulationEnvelope:{attack:.001, decay:.25, sustain:0, release:.3}})).connect(dest);
+  } else {
+    voice = keep(new Tone.FMSynth({harmonicity: 4, modulationIndex: 1.6,
+      envelope:{attack:.003, decay:1.1, sustain:0, release:1},
+      modulationEnvelope:{attack:.002, decay:.3, sustain:0, release:.3}})).connect(dest);
+    type = 'vibes';
+  }
+  return {type, octave: type === 'musicbox' ? 12 : 0,
+    play: (freq, dur, time, vel) => type === 'pluck' ? voice.triggerAttack(freq, time) : voice.triggerAttackRelease(freq, dur, time, vel),
+    dispose: () => nodes.forEach(n => n.dispose())};
 }
 
 function buildAudio(){
@@ -1049,12 +1209,27 @@ function buildAudio(){
   const hatHP = new Tone.Filter({type:'highpass', frequency:7500}).connect(drumLP);
   const hat = new Tone.NoiseSynth({noise:{type:'white'}, volume:-14,
     envelope:{attack:.001, decay:.035, sustain:0, release:.01}}).connect(hatHP);
+  const openHat = new Tone.NoiseSynth({noise:{type:'white'}, volume:-17,
+    envelope:{attack:.002, decay:.28, sustain:0, release:.05}}).connect(hatHP);
+  // the rest of the kit, for the styles that use them: a jazz ride and brushes, a rim click,
+  // a shaker and a clap
+  const ride = new Tone.MetalSynth({frequency:220, harmonicity:5.1, modulationIndex:16, resonance:4200, octaves:1.4, volume:-16,
+    envelope:{attack:.001, decay:1.3, release:.2}}).connect(drumLP);
+  const rim = new Tone.MembraneSynth({pitchDecay:.008, octaves:2, volume:-12,
+    envelope:{attack:.001, decay:.045, sustain:0, release:.02}}).connect(drumLP);
+  const shakerHP = new Tone.Filter({type:'highpass', frequency:5200}).connect(drumLP);
+  const shaker = new Tone.NoiseSynth({noise:{type:'white'}, volume:-21,
+    envelope:{attack:.006, decay:.06, sustain:0, release:.02}}).connect(shakerHP);
+  const brushBP = new Tone.Filter({type:'bandpass', frequency:2600, Q:.5}).connect(drumLP);
+  const brush = new Tone.NoiseSynth({noise:{type:'pink'}, volume:-3,
+    envelope:{attack:.02, decay:.24, sustain:0, release:.05}}).connect(brushBP);
+  const clapBP = new Tone.Filter({type:'bandpass', frequency:1500, Q:.8}).connect(drumLP);
+  const clap = new Tone.NoiseSynth({noise:{type:'white'}, volume:-9,
+    envelope:{attack:.001, decay:.11, sustain:0, release:.03}}).connect(clapBP);
 
-  // melody: soft vibraphone through a dotted-eighth echo
+  // melody: the song's lead instrument through a dotted-eighth echo
   const melDelay = new Tone.FeedbackDelay({delayTime:'8n.', feedback:.3, wet:.25}).connect(ch.melody);
-  const melody = new Tone.FMSynth({harmonicity:4, modulationIndex:1.6,
-    envelope:{attack:.003, decay:1.1, sustain:0, release:1},
-    modulationEnvelope:{attack:.002, decay:.3, sustain:0, release:.3}}).connect(melDelay);
+  const lead = makeLead('vibes', melDelay);
 
   // pad
   const padLP = new Tone.Filter({type:'lowpass', frequency:750}).connect(ch.pad);
@@ -1085,15 +1260,26 @@ function buildAudio(){
   const rain = new Tone.Noise({type:'pink'}).connect(rainSway);
 
   return {out, fft, recorder, meters, reverb, sectionLP, dustLP, dist, wobble, ch, bus, ambient,
-    keys, keysLP, bass, kick, snare, snareBody, hat, drumLP, melody, pad,
-    crackle, hiss, rain};
+    keys, keysLP, bass, kick, snare, snareBP, snareBody, hat, openHat, ride, rim, shaker, brush, clap, drumLP,
+    melDelay, lead, pad, crackle, hiss, rain};
 }
 
 function setKeysSound(type){
   if (!A) return;
   A.keys.releaseAll(); A.keys.disconnect(); A.keys.dispose();
   A.keys = makeKeys(type).connect(A.keysLP);
-  A.keysLP.frequency.value = type === 'felt' ? 1700 : 2800;
+  A.keysLP.frequency.value = KEYS_LP[type] || 2800;
+}
+
+// Dress the band for this song: its lead instrument, the drum kit and the bass's tone.
+function voiceSong(){
+  if (!A || !pat) return;
+  if (A.lead.type !== pat.lead){ A.lead.dispose(); A.lead = makeLead(pat.lead, A.melDelay); }
+  const st = STYLES[pat.style], kit = KITS[st.kit];
+  A.kick.set(kit.kick); A.snare.set(kit.snare); A.hat.set(kit.hat);
+  A.snareBP.frequency.value = kit.snareHz;
+  const {volume, ...tone} = BASS_TONES[st.bassTone];
+  A.bass.set(tone); A.bass.volume.value = volume;
 }
 
 // Tone.js loads in the background while the splash is up; playing waits for it.
@@ -1105,9 +1291,12 @@ const toneReady = new Promise(done => {
 
 function applyState(){
   if (!window.Tone) return;   // nothing is playing yet; play() applies it once Tone is here
+  // Bounce swings the 16ths, except that jazz and the waltz swing their 8ths (a triplet
+  // feel) and bossa nova stays nearly straight.
+  const st = STYLES[styleOf(state)];
   Tone.Transport.bpm.value = state.bpm;
-  Tone.Transport.swing = state.swing;
-  Tone.Transport.swingSubdivision = '16n';
+  Tone.Transport.swingSubdivision = st.swingSub || '16n';
+  Tone.Transport.swing = st.swingSub ? clamp(state.swing + .2, .3, .7) : st.straight ? state.swing * .25 : state.swing;
   if (!A) return;
   const d = state.dust;
   A.dustLP.frequency.rampTo(14000 * Math.pow(1800 / 14000, d), .2);
@@ -1117,29 +1306,38 @@ function applyState(){
   A.wobble.depth.value = state.wobble * .22;
   A.wobble.frequency.value = .35 + state.wobble * .5;
   A.reverb.wet.value = state.reverb;
-  A.keysLP.frequency.value = state.keys === 'felt' ? 1700 : 2800;
+  A.keysLP.frequency.value = KEYS_LP[state.keys] || 2800;
   for (const [name, def] of Object.entries(LAYERS)){
     const L = state.layers[name];
-    A.ch[name].mute = !L.on;
-    A.ch[name].volume.value = L.vol <= 0.001 ? -Infinity : def.db + Tone.gainToDb(L.vol);
+    // A part that's off is silent. (Not Channel.mute: setting the volume after it un-mutes it.)
+    A.ch[name].volume.value = !L.on || L.vol <= 0.001 ? -Infinity : def.db + Tone.gainToDb(L.vol);
   }
 }
 
 // ---------- sequencer ----------
 let step = 0, rng = Math.random, pat = null, motif = null, section = null, playing = false;
 
+// A new seed is a new song: within the vibe's style it picks the groove, how the keys and
+// the bass play (the second half can switch the keys up), the lead instrument and more.
 function reseed(){
   rng = mulberry32(state.seed);
   const pick = a => a[Math.floor(rng() * a.length)];
-  pat = {kick:pick(KICKS), keys:pick(KEY_PATTERNS), bass:pick(BASS_PATTERNS), ghost:rng()};
+  const style = styleOf(state), st = STYLES[style];
+  // the style's choices get their own dice, so one seed lands differently in each vibe
+  const rs = mulberry32(state.seed + hashText(style)), pickS = a => a[Math.floor(rs() * a.length)];
+  pat = {kick:pick(KICKS), keys:pick(KEY_PATTERNS), bass:pick(BASS_PATTERNS), ghost:rng(),
+    style, spb: st.beats * 4, groove: pickS(st.grooves), comp: pickS(st.comps), comp2: pickS(st.comps),
+    walk: pickS(st.basses), lead: pickS(st.leads), half: pickS(HALF_KICKS), dilla: pickS(DILLA_KICKS),
+    arp: pickS(ARPS), intro: rs() < .5 ? 2 : 4, walkShape: [7, 7]};
   motif = null; section = null;
   for (const sm of samples) sm.pattern = makeChopPattern(sm);
+  voiceSong();
   updateNowPlaying();
 }
 
 function sectionFor(bar){
   const b = bar % 40;
-  if (b < 4) return 'intro';
+  if (b < (pat ? pat.intro : 4)) return 'intro';
   if (b < 20) return 'A';
   if (b < 24) return 'break';
   return 'B';
@@ -1147,7 +1345,9 @@ function sectionFor(bar){
 const SECTION_LABEL = {intro:'intro · drums sit out', A:'groove', break:'breakdown · filter down', B:'groove + melody'};
 
 function melodyPool(){
-  const scale = PROGS[state.prog].minor ? [0,3,5,7,10] : [0,2,4,7,9];
+  // pentatonic for most styles; jazz, bossa nova and the waltz use the whole scale
+  const minor = PROGS[state.prog].minor, full = STYLES[pat.style].scale === 'full';
+  const scale = full ? (minor ? [0,2,3,5,7,8,10] : [0,2,4,5,7,9,11]) : minor ? [0,3,5,7,10] : [0,2,4,7,9];
   const pool = [];
   for (let o = -1; o <= 2; o++) for (const d of scale){
     const n = 60 + state.key + o*12 + d;
@@ -1159,11 +1359,13 @@ function melodyPool(){
 // A two-bar phrase that repeats with small mutations — repetition is what makes
 // a melody feel written rather than random.
 function makeMotif(density){
-  const pool = melodyPool();
+  const pool = melodyPool(), st = STYLES[pat.style], len = pat.spb * 2;
+  density *= st.density || 1;   // busy jazz lines, sparse ambient ones (in quarter notes)
   let idx = Math.floor(pool.length / 2);
-  const m = new Array(32).fill(null);
-  for (let i = 0; i < 32; i += 2){
-    if (rng() < density * (i % 8 === 0 ? 1.6 : 1)){
+  const m = new Array(len).fill(null);
+  for (let i = 0; i < len; i += st.grid || 2){
+    const strong = pat.spb === 12 ? i % 12 === 0 : i % 8 === 0;
+    if (rng() < density * (strong ? 1.6 : 1)){
       idx = clamp(idx + [-2,-1,-1,0,1,1,2][Math.floor(rng()*7)], 0, pool.length - 1);
       m[i] = {i:idx, v:.45 + rng()*.3};
     }
@@ -1180,8 +1382,8 @@ function onSection(sec, time){
 }
 
 function onStep(time){
-  const prog = PROGS[state.prog];
-  const bar = Math.floor(step / 16), s = step % 16;
+  const prog = PROGS[state.prog], spb = pat.spb; // steps per bar: 16, or 12 for a waltz
+  const bar = Math.floor(step / spb), s = step % spb;
   const sec = sectionFor(bar);
   const bpc = prog.chords.length <= 2 ? 2 : 1;
   const ci = Math.floor(bar / bpc);
@@ -1202,47 +1404,77 @@ function onStep(time){
   const groove = sec === 'A' || sec === 'B';
   if (s % 2 === 0) Tone.Draw.schedule(() => sceneBeat(s % 4 === 0), time);
 
-  // keys: strummed slightly, velocities wander
-  for (const [st, len, vel] of pat.keys) if (st === s){
-    chord.notes.forEach((n, i) =>
-      A.keys.triggerAttackRelease(mtof(n), len * sixteenth, time + i * .014 + h(), clamp(vel * (.85 + rng() * .3), .1, 1)));
+  // keys: how they comp is the style's (and the song's second half may switch it up).
+  // Chords are strummed slightly and their velocities wander.
+  const comp = sec === 'B' ? pat.comp2 : pat.comp;
+  const strike = (notes, len, vel, spread = .014) => notes.forEach((n, i) =>
+    A.keys.triggerAttackRelease(mtof(n), len * sixteenth, time + i * spread + h(), clamp(vel * (.85 + rng() * .3), .1, 1)));
+  if (comp === 'arp'){
+    // broken chords: one note of the chord every 8th, in the song's order
+    if (s % 2 === 0){
+      const k = (bar * spb + s) / 2;
+      strike([chord.notes[pat.arp[k % pat.arp.length] % chord.notes.length]], 3, s % 4 ? .38 : .5);
+    }
+  } else if (comp === 'strum'){
+    // a guitar's down and up strums (an up-strum catches the top strings)
+    for (const [st, dir, vel] of STRUM) if (st === s)
+      strike(dir > 0 ? chord.notes : chord.notes.slice(1).reverse(), 3, vel, dir > 0 ? .016 : .011);
+  } else if (comp === 'swell'){
+    if (s === 0 && bar % bpc === 0) strike(chord.notes, bpc * spb * .95, .42, .045);
+  } else {
+    for (const [st, len, vel] of comp === 'stabs' ? pat.keys : COMPS[comp])
+      if (st === s) strike(chord.notes, Math.min(len, spb - st), vel);
   }
 
   // pad holds the whole chord
   if (s === 0 && bar % bpc === 0)
-    A.pad.triggerAttackRelease(chord.notes.map(n => mtof(n + 12)), bpc * 16 * sixteenth * .97, time, .4);
+    A.pad.triggerAttackRelease(chord.notes.map(n => mtof(n + 12)), bpc * spb * sixteenth * .97, time, .4);
 
   // bass
   if (sec !== 'intro'){
-    for (const [st, len, iv] of pat.bass) if (st === s)
-      A.bass.triggerAttackRelease(mtof(chord.bass + iv), len * sixteenth, time + h(), .8);
-    if (s === 15 && bar % bpc === bpc - 1 && rng() < .35)
-      A.bass.triggerAttackRelease(mtof(chordAt(ci + 1).bass - 1), sixteenth * .9, time, .6);
-  }
-
-  // drums
-  // drums (your own one-shots replace the synth hits when loaded)
-  if (groove){
-    const kS = shot('kick'), sS = shot('snare'), hS = shot('hat');
-    if (pat.kick[s]) kS ? fireShot(kS, time + h(), .9) : A.kick.triggerAttackRelease('C1', '8n', time + h(), .9);
-    if (s === 4 || s === 12){
-      if (sS) fireShot(sS, time + h() + .006, .85);
-      else {
-        A.snare.triggerAttackRelease('16n', time + h() + .006, .8);
-        A.snareBody.triggerAttackRelease('D3', '16n', time + .006, .6);
+    if (pat.walk === 'walking'){
+      // quarter notes: the root, two chord tones, then a half step into the next chord
+      if (s % 4 === 0){
+        const beat = s / 4, next = bar % bpc === bpc - 1 ? chordAt(ci + 1) : chord;
+        const third = /^m(?!aj)/.test(chord.type) ? 3 : chord.type.includes('sus') ? 5 : 4;
+        if (beat === 0) pat.walkShape = rng() < .5 ? [third, 7] : [2, third];
+        const n = beat === 0 ? chord.bass : beat === 3 ? next.bass + (rng() < .65 ? -1 : 1) : chord.bass + pat.walkShape[beat - 1];
+        A.bass.triggerAttackRelease(mtof(n), 3.4 * sixteenth, time + h(), beat ? .7 : .85);
       }
+    } else {
+      for (const [st, len, iv] of pat.walk === 'roots' ? pat.bass : BASSES[pat.walk]) if (st === s)
+        A.bass.triggerAttackRelease(mtof(chord.bass + iv), Math.min(len, spb - st) * sixteenth, time + h(), .8);
+      if ((pat.walk === 'roots' || pat.walk === 'push') && s === spb - 1 && bar % bpc === bpc - 1 && rng() < .35)
+        A.bass.triggerAttackRelease(mtof(chordAt(ci + 1).bass - 1), sixteenth * .9, time, .6);
     }
-    if ((s === 7 || s === 15) && rng() < pat.ghost * .5)
-      sS ? fireShot(sS, time + h(), .2) : A.snare.triggerAttackRelease('32n', time + h(), .18);
-    const hatVel = s % 2 === 0 ? (s % 4 === 0 ? .55 : .32) : (rng() < .12 ? .15 : 0);
-    if (hatVel) hS ? fireShot(hS, time + h(), hatVel + .2) : A.hat.triggerAttackRelease('32n', time + h(), hatVel);
   }
 
-  for (const sm of samples) sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth});
+  // drums: the style's groove on its kit (your own one-shots replace the synth kick, snare and hats)
+  if (groove){
+    const d = GROOVES[pat.groove](s, bar), t = time + h();
+    const kS = shot('kick'), sS = shot('snare'), hS = shot('hat');
+    if (d.kick) kS ? fireShot(kS, t, d.kick) : A.kick.triggerAttackRelease('C1', '8n', t, d.kick);
+    if (d.snare){
+      const ts = t + .006 + (d.late || 0);   // neo-soul lays the snare back a little
+      if (sS) fireShot(sS, ts, d.snare * 1.06);
+      else { A.snare.triggerAttackRelease('16n', ts, d.snare); A.snareBody.triggerAttackRelease('D3', '16n', ts, d.snare * .75); }
+    }
+    if (d.ghost) sS ? fireShot(sS, t, d.ghost + .02) : A.snare.triggerAttackRelease('32n', t, d.ghost);
+    if (d.hat) hS ? fireShot(hS, t, d.hat + .2) : A.hat.triggerAttackRelease('32n', t, d.hat);
+    if (d.foot) A.hat.triggerAttackRelease('32n', t + .004, d.foot);
+    if (d.open) A.openHat.triggerAttackRelease('8n', t, d.open);
+    if (d.ride) A.ride.triggerAttackRelease('C4', '8n', t, d.ride);
+    if (d.rim) A.rim.triggerAttackRelease('A5', '32n', t, d.rim);
+    if (d.shaker) A.shaker.triggerAttackRelease('32n', t, d.shaker);
+    if (d.brush) A.brush.triggerAttackRelease('16n', t, d.brush);
+    if (d.clap) [0, .009, .019].forEach((o, i) => A.clap.triggerAttackRelease('32n', t + o, d.clap * (1 - i * .25)));
+  }
+
+  for (const sm of samples) sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth, beats: spb / 4});
 
   // melody
   if (motif && sec !== 'intro'){
-    const pos = step % 32;
+    const len = spb * 2, pos = step % len;
     if (pos === 0 && rng() < .3){
       const live = motif.notes.filter(Boolean);
       if (live.length){ const n = live[Math.floor(rng()*live.length)];
@@ -1250,8 +1482,9 @@ function onStep(time){
     }
     const note = motif.notes[pos];
     if (note){
-      let gap = 2; while (gap < 8 && !motif.notes[(pos + gap) % 32]) gap += 2;
-      A.melody.triggerAttackRelease(mtof(motif.pool[note.i]), gap * sixteenth * .9, time + h(), note.v);
+      const longest = STYLES[pat.style].grid === 4 ? 16 : 8;
+      let gap = 2; while (gap < longest && !motif.notes[(pos + gap) % len]) gap += 2;
+      A.lead.play(mtof(motif.pool[note.i] + A.lead.octave), gap * sixteenth * .9, time + h(), note.v);
     }
   }
 }
@@ -1293,7 +1526,7 @@ function guessMode(name, dur){
 
 // Pick the bar count that needs the least speed change to fit the current tempo.
 function guessBars(dur){
-  const barSec = 240 / state.bpm;
+  const barSec = STYLES[styleOf(state)].beats * 60 / state.bpm;
   return [1,2,4,8].reduce((best, b) =>
     Math.abs(Math.log(dur / (b * barSec))) < Math.abs(Math.log(dur / (best * barSec))) ? b : best, 1);
 }
@@ -1348,7 +1581,7 @@ function fireShot(sm, time, vel){
   sm.player.start(time);
 }
 
-function sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth}){
+function sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth, beats}){
   if (LOOP_MODES.includes(sm.mode)){
     const allowed = sm.mode === 'loop' || groove;
     if (!allowed){
@@ -1358,7 +1591,7 @@ function sampleStep(sm, {s, bar, sec, groove, chord, time, sixteenth}){
     // Varispeed fit: the loop is sped up or slowed down to land on the bar, so its
     // pitch moves with the tempo — the same thing that happens slowing a record down.
     if (s === 0 && (bar % sm.bars === 0 || !sm.active)){
-      const loopSec = sm.bars * 240 / state.bpm;
+      const loopSec = sm.bars * beats * 60 / state.bpm;
       const rate = sm.buffer.duration / loopSec;
       sm.player.playbackRate = rate;
       sm.player.start(time, (bar % sm.bars) / sm.bars * sm.buffer.duration);
@@ -1577,6 +1810,15 @@ function vibeFromText(text){
   if (has('piano','felt','soft','gentle')) tag('soft piano', () => { s.keys = 'felt'; });
   if (has('rhodes','electric','ep ')) tag('rhodes', () => { s.keys = 'rhodes'; });
   if (has('vinyl','crackle','record')) tag('vinyl', () => { s.layers.vinyl = {on:true, vol:.75}; });
+  // grooves and instruments by name
+  if (has('bossa','samba','brazil','lounge')) tag('bossa nova', () => { s.style = 'bossa'; });
+  if (has('waltz','3/4')) tag('waltz', () => { s.style = 'waltz'; });
+  if (has('swing','trio','walking bass','upright')) tag('jazz trio', () => { s.style = 'jazz'; });
+  if (has('half time','halftime','half-time','trap','808','slow jam')) tag('half-time', () => { s.style = 'halftime'; });
+  if (has('bounce','upbeat','dance','funk')) tag('bounce', () => { s.style = 'sunny'; });
+  if (has('guitar','nylon','acoustic','strum')) tag('guitar', () => { s.keys = 'guitar'; });
+  if (has('organ')) tag('organ', () => { s.keys = 'organ'; });
+  if (has('wurli')) tag('wurlitzer', () => { s.keys = 'wurli'; });
   if (has('clean','crisp','modern')) tag('clean', () => { s.dust = .25; s.wobble = .15; });
 
   const bpm = t.match(/(\d{2,3})\s*bpm/);
@@ -1607,12 +1849,12 @@ const $ = id => document.getElementById(id);
 const VIBE_INFO = {
   'Late Night Study': {ic:'☾', ds:'slow, calm, focused'},
   'Rainy Window':     {ic:'☂', ds:'soft piano + rain'},
-  'Coffee Shop Jazz': {ic:'♨', ds:'warm jazzy head-nod'},
-  'Sunday Morning':   {ic:'☀', ds:'bright and easy'},
-  'Neo-Soul Groove':  {ic:'♫', ds:'bouncy and smooth'},
+  'Coffee Shop Jazz': {ic:'♨', ds:'brushes + walking bass'},
+  'Sunday Morning':   {ic:'☀', ds:'guitar in the sunshine'},
+  'Neo-Soul Groove':  {ic:'♫', ds:'lazy, bouncy, smooth'},
   'Sleepy Ambient':   {ic:'☁', ds:'no drums, floaty'},
-  'Old Tape Memories':{ic:'▣', ds:'extra worn and wobbly'},
-  'Bittersweet':      {ic:'❦', ds:'wistful, a little sad'},
+  'Old Tape Memories':{ic:'▣', ds:'bossa nova on worn tape'},
+  'Bittersweet':      {ic:'❦', ds:'a wistful little waltz'},
 };
 const LAYER_INFO = {
   keys:'the chords', bass:'low end', drums:'the beat', melody:'little tune on top',
@@ -1658,6 +1900,7 @@ function updateNowPlaying(){
 function buildUI(){
   $('key').innerHTML = NOTES.map((n,i) => `<option value="${i}">${n}</option>`).join('');
   $('prog').innerHTML = Object.entries(PROGS).map(([k,p]) => `<option value="${k}">${p.name}</option>`).join('');
+  $('style').innerHTML = Object.entries(STYLES).map(([k,st]) => `<option value="${k}">${st.name}</option>`).join('');
   $('presets').innerHTML = Object.keys(PRESETS).map(n => `
     <button class="vibe" data-preset="${n}">
       <span class="ic" aria-hidden="true">${VIBE_INFO[n].ic}</span>
@@ -1685,7 +1928,14 @@ function buildUI(){
   });
 
   $('key').addEventListener('change', e => { state.key = +e.target.value; });
-  $('prog').addEventListener('change', e => { state.prog = e.target.value; motif = null; section = null; });
+  // the groove follows the chords unless you've picked one
+  $('prog').addEventListener('change', e => {
+    const before = styleOf(state);
+    state.prog = e.target.value; motif = null; section = null;
+    if (styleOf(state) !== before){ applyState(); reseed(); }
+    syncUI();
+  });
+  $('style').addEventListener('change', e => { state.style = e.target.value; applyState(); reseed(); syncUI(); });
   $('keys').addEventListener('change', e => { state.keys = e.target.value; setKeysSound(state.keys); });
 
   $('layers').addEventListener('click', e => {
@@ -1776,7 +2026,7 @@ function syncUI(){
     $(id).value = state[id]; setText($(id + 'Out'), SHAPE_FMT[id](state[id]), 'pop');
   }
   $('vintage').value = state.dust; setText($('vintageOut'), SHAPE_FMT.vintage(state.dust), 'pop');
-  $('key').value = state.key; $('prog').value = state.prog; $('keys').value = state.keys;
+  $('key').value = state.key; $('prog').value = state.prog; $('keys').value = state.keys; $('style').value = styleOf(state);
   for (const [k,L] of Object.entries(state.layers)){
     document.querySelector(`[data-layer="${k}"]`).setAttribute('aria-pressed', L.on);
     document.querySelector(`[data-layervol="${k}"]`).value = L.vol;
@@ -4402,7 +4652,7 @@ const ALBUMS = [
 const ALBUM_BARS = 40; // one full arrangement, then the album moves on
 
 const fmtTime = sec => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
-const trackSeconds = t => ALBUM_BARS * 240 / t.s.bpm;
+const trackSeconds = t => ALBUM_BARS * STYLES[styleOf(t.s)].beats * 60 / t.s.bpm;
 
 // Covers are a square crop of the album's own scene, so art and scene always match.
 let coverBuf = null;
@@ -4697,12 +4947,17 @@ function syncStation(){
   const n = albums ? ALBUMS.length : VIBES.length, at = albums ? openAlbum : brew ? -1 : vibeAt, dots = $('stDots');
   if (dots.children.length !== n) dots.innerHTML = '<i></i>'.repeat(n);
   [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
-  const info = brew ? {ic: '✎', ds: 'your own words'} : VIBE_INFO[VIBES[vibeAt]];
+  const info = brew ? {ic: '✎', ds: STYLES[styleOf(state)].name} : VIBE_INFO[VIBES[vibeAt]];
   const mood = `${NOTES[state.key]} ${PROGS[state.prog].minor ? 'minor' : 'major'}`;
-  const card = $('nowVibe'), title = brew ? currentVibe : VIBES[vibeAt], html = `<span class="ic" aria-hidden="true">${info.ic}</span>
-    <span class="txt"><span class="nm">${title}</span><span class="ds">${info.ds} · ${state.bpm} BPM · ${mood}</span></span>`;
-  if (card.dataset.html === html) return;
-  card.dataset.html = html; card.innerHTML = html;
+  // built from text, never HTML: a brewed vibe's name is whatever you typed
+  const card = $('nowVibe'), title = brew ? currentVibe : VIBES[vibeAt], ds = `${info.ds} · ${state.bpm} BPM · ${mood}`;
+  if (card.dataset.title === title && card.dataset.ds === ds) return;
+  const span = (cls, text) => Object.assign(document.createElement('span'), {className: cls, textContent: text});
+  const ic = span('ic', info.ic), txt = span('txt', '');
+  ic.setAttribute('aria-hidden', 'true');
+  txt.append(span('nm', title), span('ds', ds));
+  card.replaceChildren(ic, txt);
+  card.dataset.ds = ds;
   if (card.dataset.title !== title){ card.dataset.title = title; replay(card, 'enter'); }
 }
 

@@ -11,14 +11,27 @@ Open `index.html` in a browser. There's nothing to install. Audio is generated l
 The whole studio fits on one screen, on a phone or a desktop: the scene, a panel of tabs, and the player. Nothing scrolls.
 
 1. **Vibe.** Tap a vibe card, or type something like *"rainy night, soft piano, 72 bpm in A minor"* and hit BREW.
-2. **Shape.** Set speed, bounce (swing), vintage (tape dust and wobble) and space (reverb), and fine-tune the key, chords and piano.
+2. **Shape.** Set speed, bounce (swing), vintage (tape dust and wobble) and space (reverb), and fine-tune the key, chords, groove and keys instrument.
 3. **Mix.** Turn keys, bass, drums, melody, pad, vinyl crackle and rain on or off, and set each one's volume.
 
 **Sounds** takes your own audio files, and **Albums** has seven finished albums.
 
 **On a phone** it's simpler. The scene is the vibe picker: swipe it (or tap its arrows) and the next vibe plays, each in a place of its own. Under the scene, **CUSTOM** and **ALBUMS** switch modes. Custom is your own track, with the Vibe, Shape, Mix and Sounds tabs. Albums takes over the scene, the panel and the player: swipe from album to album, tap a track, and ⏭ skips ahead. Switching back to Custom brings your own track back.
 
-**TRY ANOTHER** keeps the vibe and makes a new melody and beat. **RECORD** saves what you hear as a `.webm` file.
+Every vibe has its own band and groove:
+
+| Vibe | Style | Sound |
+|---|---|---|
+| Late Night Study | boom bap | Rhodes, dusty drums |
+| Rainy Window | half-time | felt piano arpeggios, deep sub bass |
+| Coffee Shop Jazz | jazz trio | brushes and ride cymbal, walking bass |
+| Sunday Morning | sunny bounce | strummed guitar, claps and shaker |
+| Neo-Soul Groove | neo-soul | Wurlitzer, lazy snare, synth bass and lead |
+| Sleepy Ambient | ambient | no drums, swells and music box |
+| Old Tape Memories | bossa nova | organ, rim clave, shaker |
+| Bittersweet | waltz (3/4) | felt piano on beats 2 and 3 |
+
+**TRY ANOTHER** keeps the vibe and makes a new song in it: a new melody, and the style's other options for the groove, the way the keys and bass play, and the lead (vibraphone, flute, music box, guitar or synth). **RECORD** saves what you hear as a `.webm` file.
 
 **LED MODE** (top corner) keeps every light steady, so nothing flashes with the beat. It's on from the start if your system is set to reduce motion, and the browser remembers your choice.
 
