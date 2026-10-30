@@ -99,7 +99,7 @@ A copy still points to this one, so before you share yours, please give it its o
 - **Name:** search `index.html` for `Lofi` and `LOFI`. The splash screen's logo is drawn in pixels (`.sp-logo`), so replace that too.
 - **Address:** search for `lofi-studio-one.vercel.app`. That's the page address and the link-preview image.
 - **Credits:** search for `Chris Rader`, `rader-ai` and `happyrader`. That covers the header credit, the page details and the About box (name, photo and links).
-- **Images:** replace `og.png` (the link preview), `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png`. You can delete `docs/readme`, which only holds this page's pictures.
+- **Images:** replace what's in `assets/`: the icons and `og.png`, the link preview. You can delete `docs/readme`, which only holds this page's pictures.
 
 <br>
 

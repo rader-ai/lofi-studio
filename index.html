@@ -13,26 +13,26 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Lofi Studio">
 <link rel="canonical" href="https://lofi-studio-one.vercel.app/">
-<link rel="icon" href="favicon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <!-- link previews (Slack, iMessage, Discord, LinkedIn, X…) need absolute URLs -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Lofi Studio">
 <meta property="og:url" content="https://lofi-studio-one.vercel.app/">
 <meta property="og:title" content="Lofi Studio · cozy beats for tiny pixel worlds">
 <meta property="og:description" content="Pick a vibe and it brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Seven albums to explore. Free, nothing to install.">
-<meta property="og:image" content="https://lofi-studio-one.vercel.app/og.png">
+<meta property="og:image" content="https://lofi-studio-one.vercel.app/assets/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Lofi Studio: a pixel-art castle at night with a guy in a hoodie and headphones walking the battlements">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Lofi Studio · cozy beats for tiny pixel worlds">
 <meta name="twitter:description" content="Pick a vibe and it brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Seven albums to explore. Free, nothing to install.">
-<meta name="twitter:image" content="https://lofi-studio-one.vercel.app/og.png">
+<meta name="twitter:image" content="https://lofi-studio-one.vercel.app/assets/og.png">
 <meta name="twitter:image:alt" content="Lofi Studio: a pixel-art castle at night with a guy in a hoodie and headphones walking the battlements">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"Lofi Studio","url":"https://lofi-studio-one.vercel.app/","image":"https://lofi-studio-one.vercel.app/og.png",
+{"@context":"https://schema.org","@type":"WebApplication","name":"Lofi Studio","url":"https://lofi-studio-one.vercel.app/","image":"https://lofi-studio-one.vercel.app/assets/og.png",
  "description":"Pick a vibe and Lofi Studio brews a lo-fi beat live in your browser, played in animated pixel-art scenes. Shape it, mix it, record it. Free, nothing to install.","applicationCategory":"MultimediaApplication","operatingSystem":"Any (runs in the browser)",
  "offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},
  "author":{"@type":"Person","name":"Chris Rader","url":"https://happyrader.com","sameAs":["https://github.com/rader-ai"]}}
@@ -873,6 +873,17 @@
 </dialog>
 
 <script>
+// The whole studio lives in this file: first the styles, then the page's markup, then this
+// script. To get around the script, search for a section's name:
+//
+//   the music     music theory, patterns, styles, state, helpers, audio graph, sequencer,
+//                 your samples, transport, vibe text → settings
+//   the controls  UI, motion helpers, LED mode, character switch
+//   the scenes    scene state + sprites, scenes (castle + album places), living foliage,
+//                 grass, flowers and things that sway (birds and the park's people follow it),
+//                 then PLACES, which draws each world
+//   the rest      albums, the panel's tabs, phones: swipe the scene, start-up
+
 // ---------- music theory ----------
 const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 
