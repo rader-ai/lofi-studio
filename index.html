@@ -543,6 +543,66 @@
     :root{--capH:64px}
     .scene-caption{height:38px}
   }
+
+  /* ---------- phones: swipe the scene, two modes ----------
+     On a phone the scene is the vibe picker: swipe it (or tap its arrows) and the next vibe
+     plays, each in a place of its own, with a title card naming it. CUSTOM and ALBUMS under
+     the scene switch between shaping your own track and the albums, which then take over:
+     the scene shows each album's world, swiping moves between albums, and the panel is the
+     tracklist. (html.simple is set from the script, for phone-shaped windows.) */
+  .stage{position:relative;overflow:hidden;background:var(--ink)}
+  .stage .ghost{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;pointer-events:none}
+  .station,.st-dots,.st-nav,.modes,.now-vibe,.swipe-hint,.simple-only{display:none}
+  html.simple .stage{touch-action:pan-y;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  html.simple .station{display:block;position:absolute;top:6px;left:50%;transform:translateX(-50%);max-width:calc(100% - 92px);margin:0;
+    padding:6px 9px 5px;font:8px/1.3 var(--pixel);color:var(--gold);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    background:rgba(7,4,15,.86);box-shadow:0 0 0 2px var(--edge);pointer-events:none}
+  html.simple .st-dots{display:flex;position:absolute;bottom:6px;left:50%;transform:translateX(-50%);gap:5px;padding:3px 4px;background:rgba(7,4,15,.7);pointer-events:none}
+  .st-dots i{width:5px;height:5px;background:#5a4f8a;transition:width .25s var(--ease), background-color .25s}
+  .st-dots i.on{width:12px;background:var(--gold)}
+  html.simple .st-nav{display:grid;place-items:center;position:absolute;top:calc(50% - 22px);z-index:2;width:32px;height:44px;padding:0;font-size:9px;background:rgba(42,32,88,.88)}
+  .st-nav.prev{left:5px} .st-nav.next{right:5px}
+  .stage.peek #viz{animation:peek .9s var(--ease) 2}
+  .stage.peek .st-nav{animation:nudge .9s steps(2) 2}
+  @keyframes peek{35%{transform:translateX(-26px)}70%{transform:none}}
+  @keyframes nudge{50%{background-color:var(--gold);color:var(--ink)}}
+
+  html.simple #chordName,html.simple #sectionName{display:none}
+  html.simple .scene-card{container:scene / inline-size}
+  html.simple .scene-caption{justify-content:space-between;padding-left:5px}
+  /* a narrow scene (a small phone) shows just the face that's picked; tapping it moves on to the next */
+  @container scene (max-width:330px){ html.simple .who button:not([aria-checked=true]){display:none} html.simple .st-nav{width:26px} html.simple .station{max-width:calc(100% - 76px)} }
+  @container scene (max-width:250px){ html.simple .modes span{display:none} }
+  html.simple .modes{display:flex;gap:9px;flex:none;padding:0 3px}
+  .modes button{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 9px;font-size:8px;
+    box-shadow:0 0 0 2px var(--ink), inset -3px -3px 0 rgba(0,0,0,.4), inset 3px 3px 0 rgba(255,255,255,.14)}
+  .modes button[aria-checked=true]{background:var(--gold);color:var(--ink)}
+  .modes button[aria-checked=true] .ti .acc{fill:var(--torch)}
+  .modes :is([aria-checked=true],:hover) .ti-pen{animation:tiWrite .9s steps(1) infinite}
+  .modes :is([aria-checked=true],:hover) .ti-alb .gl{animation:tiSpin 1.2s steps(4) infinite}
+  @keyframes tiWrite{50%{transform:translate(1px,-1px)}}
+  @media (pointer:coarse){ .modes button{min-height:32px} }
+
+  /* Custom keeps the vibe, shape, mix and sounds tabs; Albums hides them and fills the panel */
+  html.simple .tabs [data-tab=albums]{display:none}
+  html.simple.mode-albums .tabs{display:none}
+  html.simple #pageVibe .lead,html.simple #presets{display:none}
+  html.simple .now-vibe{display:flex;flex:none;align-items:center;gap:12px;padding:12px;background:var(--ink);box-shadow:0 0 0 2px var(--stone2);margin:3px}
+  .now-vibe .ic{flex:none;width:28px;font-size:26px;line-height:1;color:var(--gold);text-align:center}
+  .now-vibe .txt{display:flex;flex-direction:column;gap:7px;min-width:0}
+  .now-vibe .nm{font:9px/1.4 var(--pixel);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .now-vibe .ds{color:var(--muted);font-size:18px;line-height:1}
+  .now-vibe.enter{animation:fadeUp .3s var(--ease)}
+  html.simple .swipe-hint{display:block;flex:none;margin:0 3px;color:var(--teal);font-size:18px;line-height:1.1}
+  @container pages (max-height:300px){ html.simple .swipe-hint{display:none} }
+  @container pages (max-height:200px){ html.simple .now-vibe{padding:7px 10px} html.simple .now-vibe .ic{font-size:20px} html.simple #vibeNote:empty{display:none} }
+  html.simple .simple-only{display:inline} html.simple .wide-only{display:none}
+  html.simple .al-top{flex:none}
+  html.simple .carousel,html.simple .car-dots{display:none}
+  html.simple .ad-info{grid-template-columns:minmax(0,1fr) auto;align-content:start}
+  html.simple .ad-actions{grid-column:2;grid-row:1 / span 2;padding:3px}
+  html.simple #albumsView .tracklist{grid-auto-rows:minmax(46px, 54px)}
+  @container pages (min-height:290px){ html.simple .ad-info .blurb{display:block} }
   /* ---------- motion ----------
      Small, snappy and game-like. Hover effects only where a real pointer can hover,
      and all of it becomes instant under prefers-reduced-motion. */
@@ -654,8 +714,19 @@
 
 <main class="layout">
   <section class="card scene-card">
-    <canvas id="viz" width="640" height="300" aria-label="Animated pixel scene that moves with the music"></canvas>
+    <div class="stage" id="stage">
+      <canvas id="viz" width="640" height="300" aria-label="Animated pixel scene that moves with the music"></canvas>
+      <canvas class="ghost" width="640" height="300" aria-hidden="true" hidden></canvas>
+      <p class="station" id="station" aria-live="polite"></p>
+      <div class="st-dots" id="stDots" aria-hidden="true"></div>
+      <button class="st-nav prev" data-step="-1" aria-label="Previous vibe">◀</button>
+      <button class="st-nav next" data-step="1" aria-label="Next vibe">▶</button>
+    </div>
     <div class="scene-caption">
+      <div class="modes" id="modes" role="radiogroup" aria-label="Mode">
+        <button role="radio" data-mode="custom" aria-checked="true" aria-label="Custom"><svg class="ti ti-pen" viewBox="0 0 8 8" aria-hidden="true"><rect class="acc" x="6" y="0" width="2" height="1"/><rect class="acc" x="7" y="1" width="1" height="1"/><rect x="5" y="1" width="2" height="1"/><rect x="4" y="2" width="3" height="1"/><rect x="3" y="3" width="3" height="1"/><rect x="2" y="4" width="3" height="1"/><rect x="1" y="5" width="3" height="1"/><rect x="1" y="6" width="2" height="1"/><rect x="0" y="7" width="1" height="1"/></svg><span>CUSTOM</span></button>
+        <button role="radio" data-mode="albums" aria-checked="false" aria-label="Albums" tabindex="-1"><svg class="ti ti-alb" viewBox="0 0 8 8" aria-hidden="true"><path d="M2 0h4v1h1v1h1v4h-1v1h-1v1h-4v-1h-1v-1h-1v-4h1v-1h1z"/><g class="gv"><rect x="2" y="2" width="1" height="1"/><rect x="5" y="2" width="1" height="1"/><rect x="2" y="5" width="1" height="1"/><rect x="5" y="5" width="1" height="1"/></g><rect class="acc" x="3" y="3" width="2" height="2"/><g class="gl"><rect x="5" y="1" width="1" height="1"/><rect x="6" y="2" width="1" height="1"/></g></svg><span>ALBUMS</span></button>
+      </div>
       <span id="chordName">—</span>
       <span id="sectionName">pick a vibe to begin</span>
       <div class="who" id="who" role="radiogroup" aria-label="Character">
@@ -678,6 +749,8 @@
       <div class="page" id="pageVibe" role="tabpanel" aria-labelledby="tab-vibe">
         <p class="lead">Tap a vibe. It starts playing right away.</p>
         <div class="vibes" id="presets"></div>
+        <div class="now-vibe" id="nowVibe"></div>
+        <p class="swipe-hint">Swipe the scene for another vibe.</p>
         <div class="describe">
           <label for="vibe">…or describe your own</label>
           <div class="row">
@@ -763,14 +836,14 @@
 <dialog id="help">
   <h2>How it works</h2>
   <ol>
-    <li><b>Vibe.</b> Tap a vibe and music starts. You can also type a description and hit BREW.</li>
+    <li><b>Vibe.</b> <span class="wide-only">Tap a vibe and music starts.</span><span class="simple-only">Swipe the scene, or tap its arrows, and the next vibe plays in a place of its own.</span> You can also type a description and hit BREW.</li>
     <li><b>Shape.</b> Drag the sliders while it plays: speed, bounce, how old it sounds, how much space. Fine-tune the key, chords and piano there too.</li>
     <li><b>Mix.</b> Turn parts like drums or rain on and off, and set how loud each one is.</li>
   </ol>
   <p>Don't like the tune? Hit <b>TRY ANOTHER</b> for a new melody and beat with the same vibe.
      Love it? Hit <b>RECORD</b>, let it play, then hit it again to download the song.</p>
   <p><b>LED mode</b> in the top corner keeps every light steady, so nothing flashes with the beat.</p>
-  <p><b>Sounds</b> lets you drop in your own audio. <b>Albums</b> has seven finished albums to play. Under the scene, the faces pick who appears.</p>
+  <p><b>Sounds</b> lets you drop in your own audio. <b>Albums</b> has seven finished albums to play<span class="simple-only">: switch to ALBUMS under the scene, then swipe from album to album</span>. Under the scene, the faces pick who appears.</p>
   <button id="helpClose" class="primary">GOT IT</button>
 </dialog>
 
@@ -1566,16 +1639,20 @@ function trackName(seed){
 
 function updateNowPlaying(){
   $('seedLbl').textContent = state.seed;
-  // a new title types itself out; the status line fades only when what's playing changes
-  const title = currentTitle(), tt = $('trackTitle');
+  // a new title types itself out; the status line fades only when what's playing changes.
+  // (Paused on a phone's Albums side, it shows the album that play will start.)
+  const cue = simple && tab === 'albums' && !playing && currentTrack?.a !== openAlbum && {a: openAlbum, t: albumPos[openAlbum] ?? 0};
+  const shown = cue || currentTrack;
+  const title = cue ? ALBUMS[cue.a].tracks[cue.t].name : currentTitle(), tt = $('trackTitle');
   if (tt.textContent !== title){ tt.textContent = title; tt.style.setProperty('--n', Math.max(4, title.length)); replay(tt, 'type'); }
-  const st = $('npStatus'), vibe = currentVibe || 'your mix', al = currentTrack && ALBUMS[currentTrack.a];
-  const key = currentTrack ? `t${currentTrack.a}.${currentTrack.t}.${playing}` : `v${vibe}.${playing}`;
-  st.textContent = currentTrack
-    ? `${playing ? '♪ ' : ''}${al.title} · track ${currentTrack.t + 1} of ${al.tracks.length}`
+  const st = $('npStatus'), vibe = currentVibe || 'your mix', al = shown && ALBUMS[shown.a];
+  const key = shown ? `t${shown.a}.${shown.t}.${playing}` : `v${vibe}.${playing}`;
+  st.textContent = shown
+    ? `${playing ? '♪ ' : ''}${al.title} · track ${shown.t + 1} of ${al.tracks.length}`
     : playing ? `♪ ${vibe} · ${state.bpm} BPM` : `${vibe} · press play`;
   if (st.dataset.key !== key){ st.dataset.key = key; replay(st, 'fade'); }
   if (!$('albumsView').hidden) renderAlbums();
+  syncStation();
 }
 
 function buildUI(){
@@ -1627,18 +1704,24 @@ function buildUI(){
 
   $('presets').addEventListener('click', e => {
     const btn = e.target.closest('[data-preset]'); if (!btn) return;
-    const name = btn.dataset.preset;
-    const seed = name === currentVibe ? Math.floor(Math.random()*1e6) : state.seed;
-    state = makeState(PRESETS[name]); state.seed = seed;
-    currentVibe = name; currentTrack = null;
-    $('vibeNote').textContent = '';
-    loadState();
+    pickVibe(btn.dataset.preset);
     sparkle(btn);
   });
 
-  $('play').addEventListener('click', () => { if (playing) stop(); else { sparkle($('play')); play(); } });
+  // On a phone's Albums side, play means the album you're looking at.
+  $('play').addEventListener('click', () => {
+    if (playing) return stop();
+    sparkle($('play'));
+    if (simple && tab === 'albums' && currentTrack?.a !== openAlbum) playTrack(openAlbum, albumPos[openAlbum] ?? 0);
+    else play();
+  });
   $('variation').addEventListener('click', () => {
     sparkle($('variation'), ['#4fd1c5', '#ffffff', '#f5c542']);
+    // ...where this button skips to the album's next track instead
+    if (simple && tab === 'albums'){
+      const a = openAlbum, n = ALBUMS[a].tracks.length;
+      return playTrack(a, currentTrack?.a === a ? (currentTrack.t + 1) % n : albumPos[a] ?? 0);
+    }
     currentTrack = null;
     state.seed = Math.floor(Math.random()*1e6);
     reseed();
@@ -1677,6 +1760,15 @@ function loadState(){
   syncUI(); applyState(); setKeysSound(state.keys);
   reseed();
   if (!playing) play();
+}
+
+// A vibe card, or a swipe on a phone. Picking the vibe that's already on plays a new song in it.
+function pickVibe(name){
+  const seed = name === currentVibe ? Math.floor(Math.random()*1e6) : state.seed;
+  state = makeState(PRESETS[name]); state.seed = seed;
+  currentVibe = name; currentTrack = null; vibeAt = VIBES.indexOf(name);
+  $('vibeNote').textContent = '';
+  loadState();
 }
 
 function syncUI(){
@@ -1845,7 +1937,12 @@ function bindCharacterUI(){
       spriteHD(g, CHARS.guy.head, CHARS.guy.colors, 0, 0);
     } else spriteHD(g, CHARS[head].head, CHARS[head].colors, 0, 0);
   });
-  $('who').addEventListener('click', e => { const b = e.target.closest('[data-who]'); if (b) setCharacter(b.dataset.who); });
+  $('who').addEventListener('click', e => {
+    const b = e.target.closest('[data-who]'); if (!b) return;
+    // squeezed down to the one face that's picked (a small phone), a tap moves on to the next
+    const squeezed = [...$('who').children].some(x => getComputedStyle(x).display === 'none');
+    setCharacter(squeezed ? CHAR_PICKS[(CHAR_PICKS.indexOf(charPick) + 1) % CHAR_PICKS.length] : b.dataset.who);
+  });
   // arrow keys move through the options, like a native radio group
   $('who').addEventListener('keydown', e => {
     const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
@@ -4206,7 +4303,9 @@ const PLACES = {
 };
 
 // The visible scene follows the album you're playing (or looking at); otherwise the castle.
+// On a phone it shows what you've swiped to: the album, or the vibe's own place.
 function activeSceneId(){
+  if (simple) return tab === 'albums' ? ALBUMS[openAlbum].scene : VIBE_PLACE[VIBES[vibeAt]];
   if (currentTrack) return ALBUMS[currentTrack.a].scene;
   if (!$('albumsView').hidden && openAlbum !== null) return ALBUMS[openAlbum].scene;
   return 'castle';
@@ -4362,6 +4461,7 @@ let hoverAlbum = null;   // desktop hover previews motion without changing the s
 function playTrack(ai, ti){
   const t = ALBUMS[ai].tracks[ti];
   currentTrack = {a: ai, t: ti};
+  openAlbum = ai; albumPos[ai] = ti;
   currentVibe = null;
   state = makeState(t.s); state.seed = t.seed;
   syncUI(); applyState(); setKeysSound(state.keys);
@@ -4375,7 +4475,7 @@ function nextTrack(){
   if (!currentTrack) return;
   const {a, t} = currentTrack;
   if (t + 1 < ALBUMS[a].tracks.length) playTrack(a, t + 1);
-  else { stop(); currentTrack = null; updateNowPlaying(); renderAlbums(); }
+  else { stop(); currentTrack = null; albumPos[a] = 0; updateNowPlaying(); renderAlbums(); }
 }
 
 function currentTitle(){
@@ -4486,7 +4586,7 @@ function renderAlbums(){
 
 // Called every frame: the highlighted (or hovered) cover plays its scene live.
 function animateCover(t, dt){
-  if ($('albumsView').hidden) return;
+  if (simple || $('albumsView').hidden) return;
   const i = hoverAlbum ?? openAlbum, al = ALBUMS[i];
   const cv = document.querySelector(`#carTrack .slide[data-album="${i}"] canvas`);
   if (!cv) return;
@@ -4506,19 +4606,208 @@ function showTab(name, focus){
     if (on && focus) b.focus();
   });
   for (const [k, id] of Object.entries(TABS)) $(id).hidden = k !== name;
+  document.documentElement.classList.toggle('mode-albums', name === 'albums');
   if (name === 'albums'){ renderAlbums(); $('albumsView').centerSlide(openAlbum, false); }
+  syncModes();
   fitPage();
 }
 function bindTabs(){
-  const bar = document.querySelector('.tabs'), names = Object.keys(TABS);
+  const bar = document.querySelector('.tabs');
   bar.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b && b.dataset.tab !== tab) showTab(b.dataset.tab); });
-  // arrow keys move along the tabs, like a native tab strip
+  // arrow keys move along the tabs, like a native tab strip (on a phone Albums is a mode, not a tab)
   bar.addEventListener('keydown', e => {
     const step = {ArrowRight: 1, ArrowLeft: -1}[e.key];
     if (!step) return;
     e.preventDefault();
+    const names = Object.keys(TABS).filter(n => !simple || n !== 'albums');
     showTab(names[(names.indexOf(tab) + step + names.length) % names.length], true);
   });
+}
+
+// ---------- phones: swipe the scene, two modes ----------
+// On a phone-shaped screen the studio is simpler. The scene is the vibe picker: swipe it (or
+// tap its arrows) and the next vibe plays, each in a place of its own. Under the scene,
+// CUSTOM shapes your own track and ALBUMS takes over: the scene, the panel and the player
+// all turn to the albums, and swiping moves from album to album. Coming back to Custom
+// brings back the track you were making.
+const VIBES = Object.keys(PRESETS);
+const VIBE_PLACE = {'Late Night Study':'castle', 'Rainy Window':'office', 'Coffee Shop Jazz':'cafe', 'Sunday Morning':'garden',
+  'Neo-Soul Groove':'forest', 'Sleepy Ambient':'lake', 'Old Tape Memories':'park', 'Bittersweet':'beach'};
+const simpleMQ = matchMedia('(max-aspect-ratio: 1/1) and (max-width: 640px), (max-height: 540px) and (min-aspect-ratio: 1/1) and (pointer: coarse)');
+let simple = false, vibeAt = 0;
+let customTab = 'vibe', customSaved = null; // the Custom tab and track to come back to from the albums
+const albumPos = {};                        // the track you were last on in each album
+
+function applySimple(){
+  simple = simpleMQ.matches;
+  document.documentElement.classList.toggle('simple', simple);
+  if (simple){
+    // a phone always has a vibe on the scene; before you've picked one it's the first
+    if (VIBES.includes(currentVibe)) vibeAt = VIBES.indexOf(currentVibe);
+    else if (!currentVibe && !currentTrack){ state = Object.assign(makeState(PRESETS[VIBES[0]]), {seed: state.seed}); currentVibe = VIBES[0]; vibeAt = 0; }
+  }
+  syncModes();
+  updateNowPlaying();
+  fitPage();
+}
+
+function setMode(m){
+  if (!simple || (m === 'albums') === (tab === 'albums')) return;
+  swapScene(() => {
+    if (m === 'albums'){
+      customTab = tab;
+      customSaved = {state: structuredClone(state), vibe: currentVibe};
+      showTab('albums');
+      if (playing) playTrack(openAlbum, albumPos[openAlbum] ?? 0);
+    } else {
+      showTab(customTab);
+      if (customSaved && (currentTrack || !playing)){
+        state = customSaved.state; currentVibe = customSaved.vibe; currentTrack = null;
+        if (VIBES.includes(currentVibe)) vibeAt = VIBES.indexOf(currentVibe);
+        syncUI(); applyState(); setKeysSound(state.keys); reseed();
+      }
+    }
+  });
+  updateNowPlaying();
+}
+
+// the mode buttons, the arrows' names, and the ⟳ button (it skips tracks on the Albums side)
+function syncModes(){
+  const albums = simple && tab === 'albums';
+  document.querySelectorAll('#modes [data-mode]').forEach(b => {
+    const on = (b.dataset.mode === 'albums') === albums;
+    b.setAttribute('aria-checked', on); b.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('.st-nav').forEach(b => b.setAttribute('aria-label', `${b.dataset.step < 0 ? 'Previous' : 'Next'} ${albums ? 'album' : 'vibe'}`));
+  const v = $('variation');
+  if (albums !== (v.dataset.next === '1')){
+    v.dataset.next = albums ? '1' : '';
+    setBtn(v, albums ? '⏭︎' : '⟳', albums ? 'NEXT TRACK' : 'TRY ANOTHER');
+    v.title = albums ? 'Skip to the next track' : 'Same vibe, new melody and beat';
+  }
+  syncStation();
+}
+
+// the title card on the scene, its dots, and the vibe card under the Vibe tab
+function syncStation(){
+  if (!simple) return;
+  const albums = tab === 'albums', brew = !albums && !VIBES.includes(currentVibe) && !!currentVibe && !currentTrack;
+  const name = albums ? ALBUMS[openAlbum].title : brew ? currentVibe : VIBES[vibeAt];
+  setText($('station'), name);
+  const n = albums ? ALBUMS.length : VIBES.length, at = albums ? openAlbum : brew ? -1 : vibeAt, dots = $('stDots');
+  if (dots.children.length !== n) dots.innerHTML = '<i></i>'.repeat(n);
+  [...dots.children].forEach((d, i) => d.classList.toggle('on', i === at));
+  const info = brew ? {ic: '✎', ds: 'your own words'} : VIBE_INFO[VIBES[vibeAt]];
+  const mood = `${NOTES[state.key]} ${PROGS[state.prog].minor ? 'minor' : 'major'}`;
+  const card = $('nowVibe'), title = brew ? currentVibe : VIBES[vibeAt], html = `<span class="ic" aria-hidden="true">${info.ic}</span>
+    <span class="txt"><span class="nm">${title}</span><span class="ds">${info.ds} · ${state.bpm} BPM · ${mood}</span></span>`;
+  if (card.dataset.html === html) return;
+  card.dataset.html = html; card.innerHTML = html;
+  if (card.dataset.title !== title){ card.dataset.title = title; replay(card, 'enter'); }
+}
+
+// one step along: the next vibe (or album), which plays right away like a tapped vibe card
+function stationStep(dir){
+  try { localStorage.setItem('lofi.swiped', '1'); } catch (e) {}
+  if (tab === 'albums'){
+    const a = (openAlbum + dir + ALBUMS.length) % ALBUMS.length;
+    openAlbum = a;
+    playTrack(a, albumPos[a] ?? 0);
+  } else pickVibe(VIBES[(vibeAt + dir + VIBES.length) % VIBES.length]);
+}
+
+// Change what the scene shows. The old picture is frozen on a ghost canvas that slides away
+// (dir ±1, from wherever a swipe let go) or fades out, while the new place slides in.
+function swapScene(change, dir = 0, from = 0){
+  const cv = $('viz'), ghost = document.querySelector('.stage .ghost'), stage = $('stage');
+  ghost.getContext('2d').drawImage(cv, 0, 0);
+  change();
+  // paint the new place right away, so it never slides in showing the old one
+  const g = cv.getContext('2d'), k = ck(g), sid = activeSceneId();
+  g.imageSmoothingEnabled = false; k.who = whoFor(sid);
+  PLACES[sid].draw(g, performance.now() / 1000, 0, k);
+  for (const el of [cv, ghost]){ el.getAnimations().forEach(a => a.cancel()); el.style.transform = el.style.opacity = ''; }
+  if (reduceMotion) return;
+  const w = stage.clientWidth, ease = 'cubic-bezier(.2,.8,.2,1)';
+  ghost.hidden = false;
+  const out = dir
+    ? ghost.animate([{transform: `translateX(${from}px)`}, {transform: `translateX(${-dir * w}px)`}], {duration: 340, easing: ease, fill: 'forwards'})
+    : ghost.animate([{opacity: 1}, {opacity: 0}], {duration: 280, easing: 'ease-out', fill: 'forwards'});
+  if (dir) cv.animate([{transform: `translateX(${from + dir * w}px)`}, {transform: 'none'}], {duration: 340, easing: ease});
+  out.onfinish = () => { ghost.hidden = true; out.cancel(); };
+}
+
+function bindStage(){
+  const stage = $('stage'), cv = $('viz');
+  let id = null, x0 = 0, y0 = 0, t0 = 0, dx = 0, dragging = false;
+  stage.addEventListener('pointerdown', e => {
+    if (!simple || e.button > 0 || e.target.closest('button')) return;
+    id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = performance.now(); dx = 0; dragging = false;
+  });
+  stage.addEventListener('pointermove', e => {
+    if (e.pointerId !== id) return;
+    const mx = e.clientX - x0, my = e.clientY - y0;
+    if (!dragging){
+      if (Math.abs(my) > 14 && Math.abs(my) > Math.abs(mx)){ id = null; return; } // a vertical gesture isn't ours
+      if (Math.abs(mx) < 8) return;
+      dragging = true; stage.setPointerCapture(id);
+      cv.getAnimations().forEach(a => a.cancel());
+    }
+    dx = Math.round(mx);
+    cv.style.transform = `translateX(${dx}px)`;
+    cv.style.opacity = 1 - Math.min(.4, Math.abs(dx) / 700);
+  });
+  const end = e => {
+    if (e.pointerId !== id) return;
+    id = null;
+    if (!dragging) return;
+    dragging = false;
+    const fast = Math.abs(dx) > 24 && Math.abs(dx) / (performance.now() - t0) > .5;
+    if (e.type === 'pointerup' && (Math.abs(dx) > stage.clientWidth * .18 || fast)){
+      const dir = dx < 0 ? 1 : -1;
+      swapScene(() => stationStep(dir), dir, dx);
+    } else {
+      cv.style.transform = cv.style.opacity = '';
+      cv.animate([{transform: `translateX(${dx}px)`}, {transform: 'none'}], {duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)'});
+    }
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  stage.addEventListener('click', e => {
+    const b = e.target.closest('[data-step]'); if (!b) return;
+    const dir = +b.dataset.step;
+    swapScene(() => stationStep(dir), dir);
+  });
+  // the arrow keys work while you're on the arrows, like a carousel
+  stage.addEventListener('keydown', e => {
+    const dir = {ArrowRight: 1, ArrowLeft: -1}[e.key];
+    if (!dir || !e.target.closest('.st-nav')) return;
+    e.preventDefault();
+    swapScene(() => stationStep(dir), dir);
+  });
+}
+
+function bindModes(){
+  const box = $('modes');
+  box.addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b){ setMode(b.dataset.mode); replay(b, 'pop'); } });
+  box.addEventListener('keydown', e => {
+    const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const m = tab === 'albums' ? 'custom' : 'albums';
+    setMode(m);
+    box.querySelector(`[data-mode="${m}"]`).focus();
+  });
+  simpleMQ.addEventListener('change', applySimple);
+}
+
+// The first time on a phone, the scene leans over once or twice to show it can be swiped.
+function hintSwipe(){
+  let seen = false;
+  try { seen = !!localStorage.getItem('lofi.swiped'); } catch (e) {}
+  if (!simple || seen || reduceMotion) return;
+  const stage = $('stage');
+  setTimeout(() => { stage.classList.add('peek'); setTimeout(() => stage.classList.remove('peek'), 1900); }, 700);
 }
 
 // Nothing scrolls: if the open tab ever needs more room than the panel has (a small phone,
@@ -4621,6 +4910,9 @@ async function boot(){
     bindAlbumsUI();
     new ResizeObserver(() => fitPage()).observe(document.querySelector('.pages'));
     bindCharacterUI();
+    bindStage();
+    bindModes();
+    applySimple();
     splitTitle();
     typePlaceholders($('vibe'));
     syncUI();
@@ -4648,6 +4940,7 @@ async function boot(){
     if (!drawing) drawScene();
   }
   await reveal();
+  hintSwipe();
 }
 boot();
 

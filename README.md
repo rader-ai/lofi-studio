@@ -16,6 +16,8 @@ The whole studio fits on one screen, on a phone or a desktop: the scene, a panel
 
 **Sounds** takes your own audio files, and **Albums** has seven finished albums.
 
+**On a phone** it's simpler. The scene is the vibe picker: swipe it (or tap its arrows) and the next vibe plays, each in a place of its own. Under the scene, **CUSTOM** and **ALBUMS** switch modes. Custom is your own track, with the Vibe, Shape, Mix and Sounds tabs. Albums takes over the scene, the panel and the player: swipe from album to album, tap a track, and ⏭ skips ahead. Switching back to Custom brings your own track back.
+
 **TRY ANOTHER** keeps the vibe and makes a new melody and beat. **RECORD** saves what you hear as a `.webm` file.
 
 **LED MODE** (top corner) keeps every light steady, so nothing flashes with the beat. It's on from the start if your system is set to reduce motion, and the browser remembers your choice.
