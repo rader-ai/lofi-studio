@@ -39,18 +39,28 @@
 </script>
 <script>
   // Before the first paint: hold the studio's intro animations until the splash opens, and
-  // on iPhone Safari leave room under the player for the toolbar that floats over the
-  // bottom of the page (only when the page really runs down behind it).
+  // keep the studio inside the part of the window you can see.
   (function(){
-    var d = document.documentElement, ua = navigator.userAgent;
+    var d = document.documentElement, probe;
     d.classList.add('booting');
-    var safari = /iP(hone|od)/.test(ua) && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua);
-    var standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-    function bleed(){
-      var under = safari && !standalone && innerHeight > innerWidth && screen.height - innerHeight < 80;
-      d.style.setProperty('--bleed', under ? '72px' : '0px');
+    // The studio is 100dvh tall: the window you can see, which on a phone changes as the
+    // browser's toolbar shows and hides. If a browser ever makes that taller than the window
+    // really is, the window's own height wins, so nothing ends up under the toolbar. (Not
+    // while you're typing, when a phone's keyboard can squeeze the window for a moment.)
+    function fit(){
+      var b = document.body, a = document.activeElement, vv = window.visualViewport;
+      if (!b || (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) || (vv && vv.scale > 1.01)) return;
+      if (!probe){
+        probe = document.createElement('i');
+        probe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100dvh;visibility:hidden;pointer-events:none';
+        b.append(probe);
+      }
+      if (probe.offsetHeight > innerHeight + 1) d.style.setProperty('--app-h', innerHeight + 'px');
+      else d.style.removeProperty('--app-h');
     }
-    bleed(); addEventListener('resize', bleed);
+    ['DOMContentLoaded', 'load', 'resize', 'pageshow'].forEach(function(e){ addEventListener(e, fit); });
+    addEventListener('focusout', function(){ setTimeout(fit, 350); });
+    if (window.visualViewport) visualViewport.addEventListener('resize', fit);
   })();
 </script>
 <script id="toneJs" src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js" defer></script>
@@ -98,7 +108,7 @@
   }
   *{box-sizing:border-box}
   body{
-    margin:0; min-height:100vh; color:var(--text); background-color:var(--night);
+    margin:0; color:var(--text); background-color:var(--night);
     font:22px/1.15 var(--body);
     background-image:
       linear-gradient(var(--ink) 2px, transparent 2px),
@@ -122,15 +132,19 @@
      320:150 shape; the panel shows one tab at a time and each tab lays itself out to fill
      the panel (and shrinks to fit if it ever runs short of room). */
   :root{--side:16px; --gap:18px; --capH:74px; --padH:28px; --maxW:1800px;
-    /* the screen's safe areas (notch, home bar), plus room for iPhone Safari's floating toolbar */
+    /* the screen's safe areas (notch, home bar) */
     --sa-t:env(safe-area-inset-top, 0px); --sa-l:env(safe-area-inset-left, 0px); --sa-r:env(safe-area-inset-right, 0px);
-    --sa-b:max(env(safe-area-inset-bottom, 0px), var(--bleed, 0px));
+    --sa-b:env(safe-area-inset-bottom, 0px);
     /* the bars run edge to edge; their contents line up with the studio's columns */
     --edgeL:max(var(--side), calc((100vw - var(--maxW)) / 2 + var(--side)), var(--sa-l));
     --edgeR:max(var(--side), calc((100vw - var(--maxW)) / 2 + var(--side)), var(--sa-r))}
   html{background:var(--ink)}
   html,body{height:100%;overflow:hidden;overscroll-behavior:none}
-  body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr);height:100vh;height:100dvh}
+  body{display:grid;grid-template-rows:auto minmax(0,1fr) auto;grid-template-columns:minmax(0,1fr)}
+  /* Exactly the window you can see. Not 100vh: phone browsers measure that with their
+     toolbar tucked away, so a page that tall runs under the toolbar while it's showing.
+     (--app-h steps in if a browser gets 100dvh wrong too; see the script in <head>.) */
+  @supports (height:100dvh){ html,body{height:var(--app-h, 100dvh)} }
 
   /* The top bar and the player are the same ink, edge to edge, and so are the strips Safari
      reads to colour its status bar and toolbar, so the phone's own bars run straight into them. */
@@ -4636,6 +4650,33 @@ async function boot(){
   await reveal();
 }
 boot();
+
+// Add ?vp to the address to see how the browser measures the window: its height, the part
+// you can see, the CSS viewport units, the safe areas and where the player sits. Handy for
+// checking a phone's toolbars.
+if (new URLSearchParams(location.search).has('vp')){
+  const box = document.createElement('pre'), unit = document.createElement('i'), safe = document.createElement('i');
+  box.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top, 0px) + 64px);transform:translateX(-50%);z-index:300;margin:0;padding:8px 10px;font:12px/1.4 ui-monospace,monospace;color:#ece6ff;background:rgba(7,4,15,.9);box-shadow:0 0 0 2px #5b4a9e;pointer-events:none;white-space:pre';
+  unit.style.cssText = safe.style.cssText = 'position:fixed;top:0;left:0;width:0;visibility:hidden;pointer-events:none';
+  safe.style.padding = 'env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px)';
+  document.body.append(box, unit, safe);
+  const units = us => us.map(u => { unit.style.height = '100' + u; return `${u} ${Math.round(unit.getBoundingClientRect().height)}`; }).join('  ');
+  const show = () => {
+    const vv = window.visualViewport, s = getComputedStyle(safe), player = document.querySelector('.playerbar').getBoundingClientRect();
+    box.textContent = [
+      `window ${innerWidth}×${innerHeight}  screen ${screen.width}×${screen.height} @${devicePixelRatio}x`,
+      vv ? `visible ${Math.round(vv.width)}×${Math.round(vv.height)} from ${Math.round(vv.offsetTop)}  zoom ${vv.scale.toFixed(2)}` : 'visible ?',
+      units(['vh', 'svh', 'lvh', 'dvh']),
+      `safe area ${['Top', 'Right', 'Bottom', 'Left'].map(k => parseFloat(s['padding' + k])).join(' ')}`,
+      `page ${Math.round(document.body.getBoundingClientRect().height)}  player ${Math.round(player.top)}–${Math.round(player.bottom)}`,
+      `app-h ${document.documentElement.style.getPropertyValue('--app-h') || 'not needed'}`,
+    ].join('\n');
+  };
+  show();
+  addEventListener('resize', show);
+  window.visualViewport?.addEventListener('resize', show);
+  setInterval(show, 1000);
+}
 </script>
 </body>
 </html>
