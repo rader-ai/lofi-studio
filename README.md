@@ -59,6 +59,25 @@ Each track is a fixed recipe and seed, so it plays the same song every time. Alb
 
 Drop audio files onto the page to use them as melody or beat loops (stretched to fit the tempo), vocal chops that follow the chords, background textures, or replacement kick, snare and hi-hat sounds.
 
+## Make it your own
+
+The code is yours to build on, under the [MIT license](LICENSE): change it, ship it, even sell it. Just keep the `LICENSE` file with your copy.
+
+1. Click **Use this template** for a fresh repo of your own, or **Fork** if you'd like to suggest changes back here.
+2. Open `index.html` in a browser. It's one file with no build step, so edit and refresh.
+3. Put it on any static host, like Vercel, Netlify or GitHub Pages.
+
+A copy still points to this one, so before you share yours, please give it its own name and change these:
+
+- **Name:** search `index.html` for `Lofi` and `LOFI`. The splash screen's logo is drawn in pixels (`.sp-logo`), so replace that too.
+- **Address:** search for `lofi-studio-one.vercel.app`. That's the page address and the link-preview image.
+- **Credits:** search for `Chris Rader`, `rader-ai` and `happyrader`. That covers the header credit, the page details and the About box (name, photo and links).
+- **Images:** replace `og.png` (the link preview), `favicon.svg`, `favicon-32.png` and `apple-touch-icon.png`.
+
 ## Credits
 
 Made by [Chris Rader](https://happyrader.com) ([@rader-ai](https://github.com/rader-ai)). Sound by [Tone.js](https://tonejs.github.io/); fonts are Press Start 2P and VT323.
+
+## License
+
+[MIT](LICENSE). Tone.js (MIT) and the fonts (SIL Open Font License) have their own licenses and load from public CDNs.
