@@ -1078,10 +1078,13 @@ function chordAt(idx){
 let A = null;
 
 // The keys can be a Rhodes, a soft felt piano, a Wurlitzer, an organ or a nylon-string guitar.
-const KEYS_LP = {rhodes:2800, felt:1700, wurli:2300, organ:1900, guitar:3800};
+// Plucked strings need an audio worklet, which browsers refuse on a page opened as a plain
+// file, so there the guitar falls back to the felt piano and the plucked lead to the vibes.
+const CAN_PLUCK = location.protocol !== 'file:';
+const KEYS_LP = {rhodes:2800, felt:1700, wurli:2300, organ:1900, guitar: CAN_PLUCK ? 3800 : 1700};
 function makeKeys(type){
-  if (type === 'guitar') return makeGuitar();
-  if (type === 'felt') return new Tone.PolySynth(Tone.Synth, {
+  if (type === 'guitar' && CAN_PLUCK) return makeGuitar();
+  if (type === 'felt' || type === 'guitar') return new Tone.PolySynth(Tone.Synth, {
     maxPolyphony: 32,
     oscillator:{type:'triangle'},
     envelope:{attack:.004, decay:2.2, sustain:.06, release:1.4},
@@ -1137,7 +1140,7 @@ function makeLead(type, dest){
   if (type === 'flute'){
     const vib = keep(new Tone.Vibrato({frequency: 4.8, depth: .08})).connect(dest);
     voice = keep(new Tone.Synth({oscillator:{type:'sine'}, envelope:{attack:.07, decay:.25, sustain:.7, release:.45}, volume: -18})).connect(vib);
-  } else if (type === 'pluck'){
+  } else if (type === 'pluck' && CAN_PLUCK){
     voice = keep(new Tone.PluckSynth({attackNoise: 1.1, dampening: 3800, resonance: .95, volume: 9})).connect(dest);
   } else if (type === 'synth'){
     voice = keep(new Tone.MonoSynth({oscillator:{type:'square'}, portamento: .035, volume: -20,
