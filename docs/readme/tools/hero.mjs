@@ -86,7 +86,7 @@ await page.evaluate(() => {
 // the castle first: a few frames are kept to wipe back in at the end, so the loop closes exactly
 const WIPE = 5, TITLE = 40, OUT = 6, CASTLE_REST = 8, HOLD = 24;
 await page.evaluate(WIPE => {
-  __cap.setVibe(0); __cap.warm(14);
+  __cap.setVibe(0); __cap.warm(2); __cap.stage('castle', 1.9);
   __hero.pre = [];
   for (let i = 0; i < WIPE; i++){ __cap.tick(.06); __hero.pre.push(__hero.copyOf(__hero.viz)); }
 }, WIPE);
@@ -102,7 +102,7 @@ for (let f = 0; f < CASTLE_REST; f++) emit(await page.evaluate(() => { __cap.tic
 
 // then on to each world in turn
 for (let i = 1; i < 8; i++){
-  await page.evaluate(i => { __hero.old = __hero.layer(); __cap.setVibe(i); __cap.warm(14); }, i);
+  await page.evaluate(i => { __hero.old = __hero.layer(); __cap.setVibe(i); __cap.warm(2); __cap.stage(VIBE_PLACE[VIBES[i]], .9); }, i);
   for (let f = 0; f < WIPE; f++) emit(await page.evaluate(([i, f, WIPE]) => {
     __cap.tick(.06);
     __hero.wipe(__hero.old, () => { __hero.world(); __hero.card(i); }, f, WIPE);

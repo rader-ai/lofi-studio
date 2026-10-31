@@ -1,5 +1,7 @@
 // Frame-exact capture of the real scenes. The app's own drawScene() paints every frame;
 // only the clock is stepped by hand, so motion is smooth and nothing depends on capture speed.
+// The app's rare moments would be a long wait in a six second loop, so each world is staged:
+// its own sights and actions, asked for by name, timed to fall inside the recording.
 import { chromium } from 'playwright-core';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -45,7 +47,60 @@ export const HARNESS = FFT => {
     },
     warm(seconds){ for (let s = 0; s < seconds; s += .05) cap.tick(.05); },
     png(){ return document.getElementById('viz').toDataURL('image/png').split(',')[1]; },
+    // Sets up a world so that its best moment comes `lead` seconds from now.
+    stage(place, lead){
+      const sight = (lane, name) => { (pst[lane] ||= {wait: 1e9, now: null, bag: []}).force = name; };
+      const act = (name, at) => { life.met = true; life.wait = 1e9; life.act = ACTIONS[name]; life.name = name; life.at = at; life.rate = 1; };
+      const fixed = (r, f) => { const keep = Math.random; Math.random = () => r; f(); Math.random = keep; };
+      life.act = null; life.wait = 1e9;
+      if (place === 'castle'){
+        // the dragon crosses the moon while they read and walk
+        fixed(.2, () => { (pst.cSky ||= {wait: 1e9, now: null, bag: []}).now = dragonSight(28)(); });
+        cap.warm(13.2 - lead);
+        act('read', 3);
+      } else if (place === 'office'){
+        // the cat is on the keyboard again
+        cap.warm(1);
+        Object.assign(pst.officeCat, {home: false, leg: 5, u: .01, x: 90, y: 104, dir: -1, from: null});
+        act('pet', Math.max(0, 1.6 - lead));
+      } else if (place === 'cafe'){
+        // a long sip while the bus goes by
+        sight('cafeStreet', 'bus');
+        cap.warm(2);
+        act('sip', 2.6 - lead);
+      } else if (place === 'garden'){
+        // a butterfly comes to her finger, and a squirrel runs along the fence
+        sight('gardenFence', 'squirrel');
+        cap.warm(7);
+        act('finger', 3.2 - lead);
+      } else if (place === 'forest'){
+        // a comet overhead, a deer at the edge of the clearing, and the marshmallow goes up
+        sight('forestSky', 'comet'); sight('forestEdge', 'deer');
+        cap.warm(10);
+        act('smoreFire', 9.4 - lead);
+      } else if (place === 'lake'){
+        // ducklings go by, and there's a fish on the line
+        sight('lakeWater', 'ducks');
+        cap.warm(16);
+        act('fish', 14.4 - lead);
+      } else if (place === 'park'){
+        // crumbs for the pigeons, a kite on the hill and a jogger on the path
+        sight('parkSky', 'kite');
+        cap.warm(10);
+        const [stroller, , jogger] = pst.parkFolk;
+        Object.assign(jogger, {dir: 1, x: 20}); Object.assign(stroller, {dir: -1, x: 262});
+        act('feed', Math.max(.4, 2.6 - lead));
+      } else if (place === 'beach'){
+        // the whale breaches, the pier behind us, with a crab on its way across
+        scene.scroll = 150;
+        sight('beachSea', 'whale');
+        cap.warm(8.4 - lead - 3);
+        sight('beachSand', 'crab');
+        cap.warm(3);
+      }
+    },
   };
+  Math.random = mulberry32(2026);   // the same film every time, unless the app changes
 };
 
 const save = (dir, n, b64) => writeFileSync(join(dir, String(n).padStart(4, '0') + '.png'), Buffer.from(b64, 'base64'));
@@ -54,7 +109,7 @@ const save = (dir, n, b64) => writeFileSync(join(dir, String(n).padStart(4, '0')
 // 2px cells) into the frames just before the first, so the loop has no visible seam.
 export async function captureLoop(page, vibeIndex, name, frames = 100, overlap = 8){
   const dir = join(OUT, name); rmSync(dir, {recursive: true, force: true}); mkdirSync(dir, {recursive: true});
-  await page.evaluate(([i]) => { __cap.setVibe(i); __cap.warm(14); }, [vibeIndex]);
+  await page.evaluate(([i, name]) => { __cap.setVibe(i); __cap.warm(2); __cap.stage(name, 1.7); }, [vibeIndex, name]);
   await page.evaluate(o => {
     const cv = document.getElementById('viz'), g = cv.getContext('2d', {willReadFrequently: true});
     __cap.lead = [];
@@ -83,7 +138,7 @@ if (process.argv[1].endsWith('scenes.mjs')){
   await page.evaluate(HARNESS, FFT);
   const which = process.argv[2] ? process.argv[2].split(',').map(Number) : [0, 1, 2, 3, 4, 5, 6, 7];
   const names = await page.evaluate(() => VIBES.map(v => VIBE_PLACE[v]));
-  const LENGTH = {castle: 44, lake: 72, cafe: 90, forest: 90};   // scrolling and rain cost the most
+  const LENGTH = {castle: 66, lake: 90, cafe: 90, forest: 90};   // scrolling and rain cost the most
   for (const i of which){
     const t0 = Date.now();
     await captureLoop(page, i, names[i], LENGTH[names[i]] || 100);

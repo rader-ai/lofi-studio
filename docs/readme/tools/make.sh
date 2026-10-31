@@ -16,10 +16,16 @@ node demo.mjs phone
 node demo.mjs desktop
 node stills.mjs "$OUT"   # plates, buttons and album covers
 
+# frame 20 of each loop is its big moment, which makes the still for people who prefer no motion
+ENCODERS=()
 for s in castle office cafe garden forest lake park beach; do
-  img2webp -loop 0 -lossless -m 6 -min_size -d 60 .frames/$s/*.png -o "$OUT/world-$s.webp" 2>/dev/null
+  # every layer of the castle scrolls, which is the one thing lossless can't keep small
+  [ $s = castle ] && mode="-mixed -q 84" || mode="-lossless"
+  img2webp -loop 0 $mode -m 6 -min_size -d 60 .frames/$s/*.png -o "$OUT/world-$s.webp" 2>/dev/null &
+  ENCODERS+=($!)
   magick .frames/$s/0020.png -define webp:lossless=true "$OUT/world-$s-still.webp"
 done
+wait "${ENCODERS[@]}"   # not a bare wait: that would wait for the web server too, forever
 img2webp -loop 0 -lossless -m 6 -min_size -d 60 .frames/hero/*.png -o "$OUT/hero.webp" 2>/dev/null
 magick .frames/hero/0020.png -define webp:lossless=true "$OUT/hero-still.webp"
 
