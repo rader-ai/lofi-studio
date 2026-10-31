@@ -7062,7 +7062,14 @@ const PLACES = {
       }
       p.lawn(() => 112, PAL_GRASS_NIGHT, 32, {base: .45, swell: .2, light: (x, y) => Math.max(0, 1 - Math.hypot(x - 208, (y - 124) * 2.2) / 70) * .7 + Math.max(0, 1 - Math.hypot(x - 60, (y - 118) * 2.5) / 90) * .08});
       p.glow(208, 124, 70, '#ff9040', .3, 18);
-      p.texture(166, 120, 84, 12, ['#140e0a','#1e160e','#2a1e14','#3a2a1a'], 3, 33);
+      // the earth around the fire, worn bare by feet: it has no edge of its own, and the grass gives way to it unevenly
+      const earth = ['#140e0a','#1e160e','#2a1e14','#3a2a1a'].map(rgb);
+      for (let Y = 114 * HD; Y < 138 * HD; Y++) for (let X = 156 * HD; X < 262 * HD; X++){
+        const x = X / HD, y = Y / HD, d = Math.hypot((x - 208) / 44, (y - 125.5) / 8.5) + (vnoise(X, Y, 22, 33) - .5) * .5 + (vnoise(X, Y, 6, 34) - .5) * .22;
+        if (d + bay(X, Y) * .3 > 1) continue;
+        const worn = (1 - d) * 1.5 + (vnoise(X, Y, 9, 35) - .5) * .9;
+        p.put(X, Y, earth[Math.max(0, Math.min(3, Math.floor(worn * 2 + 1 + bay(X, Y))))]);
+      }
       for (let i = 0; i < 36 * HD; i++){
         const Y = 90 * HD + i, w = Math.round(i * .85);
         for (let X = 104 * HD - w; X < 104 * HD + w; X++){
