@@ -2239,7 +2239,7 @@ function drawScene(){
   scene.last = now;
   // the walker eases into a stride and out of it, and the ground moves exactly as fast as
   // their feet. On the beat the stride is nudged so that a foot lands with it.
-  scene.walk += ((playing ? 1 : 0) - scene.walk) * Math.min(1, dt * 3);
+  scene.walk += ((playing && !reduceMotion ? 1 : 0) - scene.walk) * Math.min(1, dt * 3);
   if (scene.walk < .01) scene.walk = 0;
   scene.speed = STRIDE * state.bpm / 60 * scene.walk;
   const fix = scene.nudge * Math.min(1, dt * 2);
@@ -3165,23 +3165,18 @@ const SHADOW_CV = {};
 function castShadow(k, cv, X, Y, foot, baseY, sd){
   if (sd.alpha <= .01) return;
   const c = SHADOW_CV.cv ||= Object.assign(document.createElement('canvas'), {width: DW, height: DH}), g = SHADOW_CV.g ||= c.getContext('2d');
-  const rows = spriteRows(cv), flat = Math.abs(sd.dx) > Math.abs(sd.dy) * 1.2;
+  // from upright to lying along the ground, gradually, or a shadow snaps as whatever casts it goes by
+  const rows = spriteRows(cv), s = clamp((Math.abs(sd.dx) / Math.max(.01, Math.abs(sd.dy)) - .8) / .8, 0, 1);
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   g.fillStyle = '#000';
   for (const [row, a, b] of rows){
     const h = foot - row;
     if (h < 0) continue;
     const f = h / foot;
-    if (flat ? (f > .7 ? h % 3 : f > .4 ? h & 1 : 0) : f > .62 && (h & 1)) continue;   // it thins away toward the far end
-    let px, py, ww, hh;
-    if (flat){
-      // lying along the ground: the row's width runs into the distance, so it's only a little deep
-      ww = Math.ceil(Math.abs(sd.dx)) + 1; hh = Math.max(1, Math.round((b - a + 1) * .2 * (1 - f * .4)));
-      px = Math.round(X + (a + b) / 2 + h * sd.dx); py = Math.round(baseY + h * sd.dy - hh / 2);
-    } else {
-      ww = b - a + 1; hh = Math.max(1, Math.ceil(Math.abs(sd.dy)));
-      px = Math.round(X + a + h * sd.dx); py = Math.round(baseY + h * sd.dy);
-    }
+    if (s > .5 ? (f > .7 ? h % 3 : f > .4 ? h & 1 : 0) : f > .62 && (h & 1)) continue;   // it thins away toward the far end
+    // the more it lies along the ground, the more a row's width runs into the distance, and the less deep it is
+    const wide = b - a + 1, ww = Math.round(lerp(wide, Math.ceil(Math.abs(sd.dx)) + 1, s)), hh = Math.max(1, Math.round(lerp(Math.ceil(Math.abs(sd.dy)), wide * .2 * (1 - f * .4), s)));
+    const px = Math.round(X + lerp(a, (a + b) / 2, s) + h * sd.dx), py = Math.round(baseY + h * sd.dy - hh / 2 * s);
     g.fillRect(px, py, ww, hh);
     if (px < x0) x0 = px; if (py < y0) y0 = py; if (px + ww > x1) x1 = px + ww; if (py + hh > y1) y1 = py + hh;
   }
@@ -4366,6 +4361,7 @@ function owlFlight(mx, my, homeX, homeY){
 
 // Flames that lean with the wind and breathe with the music, smoke, sparks and the odd pop.
 function campfire(k, t, dt, x, y){
+  if (reduceMotion) t *= .12;   // for anyone who'd rather things stayed still, it burns low and slow
   const g = k.g, st = pst.fire ||= {pop: 5, flare: 0, burst: []};
   const sp = spectrum(6, t), drive = .86 + sp[0] * .42 + flashy() * .16, flick = .8 + vnoise(t * 6, 3, 1, 9) * .4;
   const lean = (reduceMotion ? 0 : WIND(x)) * 3.4;
@@ -4405,7 +4401,7 @@ function campfire(k, t, dt, x, y){
     }
   }
   // sparks
-  for (const s of drifting('sparks', 14, () => ({x, y: y - 6, vx: 0, life: Math.random() * 2}))){
+  if (!reduceMotion) for (const s of drifting('sparks', 14, () => ({x, y: y - 6, vx: 0, life: Math.random() * 2}))){
     s.life -= dt; s.y -= 20 * dt; s.x += (s.vx + lean * 8) * dt;
     if (s.life <= 0){ s.x = x - 4 + Math.random() * 8; s.y = y - 8; s.vx = Math.random() * 12 - 6; s.life = 1 + Math.random() * 1.6; }
     k.rect(s.x, s.y, .5, .5, s.life > .8 ? '#ffe08a' : '#ff8a3a');
@@ -4590,10 +4586,12 @@ function dragonSight(moonY){
 }
 // a black cat with somewhere to be, along the top of the wall
 function wallCatSight(){
-  const dir = Math.random() < .5 ? 1 : -1;
+  let dir = Math.random() < .5 ? 1 : -1, age = 0;
   let x = dir > 0 ? -16 : SW + 10, step = 0, stop = 3 + Math.random() * 6, sit = 0;
   return (k, t, dt) => {
     x -= scene.speed * dt;
+    // walking the way we're walking, it can keep pace with us for minutes: nice for a while, and then it turns back
+    if ((age += dt) > 45) dir = -1;
     if (sit > 0){ sit -= dt; }
     else { x += dir * 13 * dt; step += dt * 8; if ((stop -= dt) <= 0){ sit = 1.8 + Math.random() * 2.2; stop = 4 + Math.random() * 7; } }
     blit(k, sit > 0 ? catSprite('sit', 0, Math.round(Math.sin(t * 1.6) * 1), CAT_BLACK, dir) : catSprite('walk', Math.floor(step) % 4, 0, CAT_BLACK, dir), x * HD, WALL_Y * HD - 15);
@@ -5043,8 +5041,8 @@ PROPS.rod = (k, p, a, X, Y) => {
   }
   const rx = tx + flex, ry = ty + flex * .8;
   // the line runs out to the float on the water, sagging until something takes it
-  const spot = [X + 96, Y + 58 + Math.sin(life.clock * 1.5)], fx = lerp(rx + 3, spot[0], a.cast), dip = a.bite * (Math.sin(life.clock * 13) > 0 ? 3 : 1);
-  const fy = lerp(ry + 18, spot[1], a.cast) + (a.cast > .95 ? dip : 0), sag = (1 - a.tug) * 8 * a.cast;
+  const spot = [X + 96, Y + 58 + Math.sin(life.clock * 1.5)], fx = Math.round(lerp(rx + 3, spot[0], a.cast)), dip = a.bite * (Math.sin(life.clock * 13) > 0 ? 3 : 1);
+  const fy = Math.round(lerp(ry + 18, spot[1], a.cast) + (a.cast > .95 ? dip : 0)), sag = (1 - a.tug) * 8 * a.cast;
   g.fillStyle = 'rgba(232,236,255,.55)';
   for (let i = 0; i <= 40; i++){ const u = i / 40; g.fillRect(Math.round(lerp(rx, fx, u)), Math.round(lerp(ry, fy, u) + Math.sin(u * Math.PI) * sag), 1, 1); }
   if (a.fish > .5){
@@ -5062,6 +5060,7 @@ const X0 = p => Math.round(scene.heroX * HD) + p.near[0], Y0 = p => Math.round(s
 function rainIn(k, dt, x, y, w, h, n, col, key){
   const drops = pst['rain' + key] ||= [];
   while (drops.length < n) drops.push({x: x + Math.random() * (w + 20), y: y + Math.random() * h});
+  if (reduceMotion) dt = 0;   // for anyone who'd rather things stayed still, it hangs in the air
   for (const d of drops){
     d.y += 150 * dt; d.x -= 30 * dt;
     if (d.y > y + h){ d.y = y - 3; d.x = x + Math.random() * (w + 20); }
@@ -6359,7 +6358,7 @@ function beachFlag(k, x, y, t){
   const g = k.g, gust = Math.abs(WIND(x)), X = Math.round(x * HD), Y = Math.round(y * HD), flap = 2 + gust * 5;
   for (let i = 0; i < 12; i++){
     const yo = Math.round(Math.sin(t * (3 + gust * 7) - i * .6) * (i / 12) * (flap * .5)), hang = Math.round((1 - Math.min(1, gust + .35)) * i * .55);
-    g.fillStyle = i % 4 < 2 ? '#e84a4a' : '#c23038'; g.fillRect(X + i * Math.sign(wind.dir), Y + yo + hang, 1, 5 - i * .22);
+    g.fillStyle = i % 4 < 2 ? '#e84a4a' : '#c23038'; g.fillRect(X + i * Math.sign(wind.dir), Y + yo + hang, 1, Math.round(5 - i * .22));
   }
 }
 function campfireSmall(k, x, y, t){
@@ -6436,7 +6435,7 @@ const PLACES = {
         ss.life -= dt; ss.x += 150 * dt; ss.y += 45 * dt;
         for (let i = 0; i < 16; i++) k.dot(ss.x - i * 1.1, ss.y - i * .33, `rgba(240,235,255,${(1 - i / 16) * Math.min(1, ss.life * 2)})`);
       }
-      k.glow(262, 28, 22, '#c8b8ff', .15 + beat * .25);
+      k.glow(262, 28, 22, '#c8b8ff', .18);
       const cover = cloudDeck(k, t, dt, 'cClouds', {mix: [.2, .3, .4, .1], n: 6, y0: 6, y1: 60, w0: 60, w1: 150, speed: 1.2, cols: C_CASTLE_LIT, seed: 61, tall: .1, parallax: .02, moon: {x: 262, y: 28, r: 12}});
       rare(k, t, dt, 'cSky', {dragon: dragonSight(28), comet: cometSight}, [30, 70]);
       for (const b of drifting('cBats', 3, i => ({x: SW + 20 + i * 150, y: 18 + i * 14, v: 18 + i * 5, p: i * 2}))){
@@ -6618,7 +6617,7 @@ const PLACES = {
       }
       // headlights a long way down
       for (const c of drifting('traffic', 7, i => ({x: 40 + Math.random() * 112, v: (i % 2 ? 1 : -1) * (14 + Math.random() * 12)}))){
-        c.x += c.v * dt;
+        if (!reduceMotion) c.x += c.v * dt;
         if (c.x > 154) c.x = 38; if (c.x < 38) c.x = 154;
         k.rect(c.x, c.v > 0 ? 94.5 : 95.5, 1, .5, c.v > 0 ? '#fff0c0' : '#ff5a5a');
       }
@@ -6631,7 +6630,7 @@ const PLACES = {
       k.rect(40, 55, 112, 2, '#3a2218');
       rainIn(k, dt, 40, 18, 112, 78, 80, 'rgba(170,190,255,.5)', 'office');
       for (const b of drifting('beads', 12, () => ({x: 42 + Math.random() * 108, y: 20 + Math.random() * 70, v: 2 + Math.random() * 4}))){
-        b.y += b.v * dt;
+        if (!reduceMotion) b.y += b.v * dt;
         if (b.y > 94){ b.y = 20; b.x = 42 + Math.random() * 108; }
         if (Math.abs(b.x - 96) < 2 || Math.abs(b.y - 56) < 2) continue;
         k.rect(b.x, b.y, 1, 1, 'rgba(200,215,255,.7)'); k.dot(b.x, b.y, '#ffffff'); k.rect(b.x + .25, b.y - 2, .5, 2, 'rgba(188,208,255,.25)');
@@ -6645,8 +6644,8 @@ const PLACES = {
       k.glow(120, 88, 18, '#4fd1c5', .12 + flashy() * .1, 12);
       k.glow(120, 104.5, 24, '#4fd1c5', .14 + flashy() * .05, 2);   // the polished desk gives back the screen
       for (let j = 0; j < 3; j++){
-        const age = (t * .7 + j / 3) % 1;
-        k.rect(148.5 + Math.sin(t * 2 + j * 2) * 1.5, 96 - age * 9, .5, 1, `rgba(255,255,255,${.5 * (1 - age)})`);
+        const steam = reduceMotion ? 0 : t, age = (steam * .7 + j / 3) % 1;
+        k.rect(148.5 + Math.sin(steam * 2 + j * 2) * 1.5, 96 - age * 9, .5, 1, `rgba(255,255,255,${.5 * (1 - age)})`);
       }
       const lights = ['#f5c542','#e07a8b','#4fd1c5','#9ccf9a'];
       for (let x = 6, i = 0; x < SW; x += 14, i++){
@@ -6930,8 +6929,8 @@ const PLACES = {
       const now = new Date(), mins = now.getMinutes() + now.getSeconds() / 60, hr = (now.getHours() % 12 + mins / 60) / 12 * TAU - TAU / 4, mn = mins / 60 * TAU - TAU / 4;
       for (let i = 0; i <= 8; i++) k.rect(226 + Math.cos(mn) * i * .6, 40 + Math.sin(mn) * i * .6, .5, .5, '#2a1a12');
       for (let i = 0; i <= 6; i++) k.rect(226 + Math.cos(hr) * i * .55, 40 + Math.sin(hr) * i * .55, .5, .5, '#2a1a12');
-      glowCone(k, 168, 22, 104, .7, .1 + flashy() * .1);
-      glowCone(k, 300, 22, 98, .6, .08 + flashy() * .08);
+      glowCone(k, 168, 22, 104, .7, .1);
+      glowCone(k, 300, 22, 98, .6, .08);
       motes(k, t, dt, 'cafeMotes', 46, 8, 320, 24, 132, (x, y) =>
         x > 14 && x < 130 && y > 62 && y < 130 ? '#dfeaff' : Math.abs(x - 168) < (y - 22) * .7 && y < 104 ? '#ffe0a8' : Math.abs(x - 300) < (y - 22) * .6 && y < 98 ? '#ffe0a8' : null);
       barista(k, t, dt);
@@ -7142,7 +7141,7 @@ const PLACES = {
       fireflies(k, t, dt, 'forestFlies', 12, 30, 290, 96, 140);
       drawTufts(k, pst.forestEdge2 ||= fringe(() => 113, -4, SW + 4, 79, {size: 5, lv: 1}).filter(f => f.x < 76 || f.x > 133), PAL_GRASS_NIGHT, t, still);
       // the log blocks the fire too, and its shadow breathes with the flames
-      k.glow(136, 125.2, 20 + vnoise(life.clock * 7, 5, 1, 19) * 4, '#03040c', .34, 1.7);
+      k.glow(136, 125.2, 20 + vnoise((still ? 40 : life.clock) * 7, 5, 1, 19) * 4, '#03040c', .34, 1.7);
       sitHero(k, 160, 118);
       rare(k, t, dt, 'forestNear', {rabbit: rabbitSight}, [25, 60]);
       drawTufts(k, pst.forestGrass ||= fringe(() => 149, -4, SW + 4, 77, {size: 10, lv: 1, depth: 2}), PAL_GRASS_NIGHT, t, still);
