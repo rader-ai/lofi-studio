@@ -3839,7 +3839,7 @@ function birdLife(k, t, dt, key, n, perches, kinds, opts = {}){
   const taken = new Set(flock.filter(b => b.state !== 'away').map(b => b.perch));
   for (const b of flock){
     if (b.state === 'away'){
-      if ((b.wait -= dt) > 0) continue;
+      if (reduceMotion || (b.wait -= dt) > 0) continue;
       let free = perches.filter(q => !taken.has(q));
       const wanted = opts.prefer ? free.filter(opts.prefer) : [];
       if (wanted.length) free = wanted;
@@ -4726,10 +4726,11 @@ function spectrum(n, t){
   st.v = st.v.map((x, i) => x + (raw[i] - x) * a); st.t = t;
   return st.v.slice();
 }
-function sitHero(k, x, seatY){
+// rest: where the hands go when they aren't busy, as {near, far}, if not on the thighs
+function sitHero(k, x, seatY, rest){
   const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(seatY * HD) - SEAT_ROW;
   scene.heroX = x; scene.heroY = Y / HD;
-  heroDraw(k, c, livePose({...REST, sit: true, near: [16, 28], far: [18, 27]}, k.live), X, Y);
+  heroDraw(k, c, livePose({...REST, sit: true, near: [16, 28], far: [18, 27], ...rest}, k.live), X, Y);
 }
 function walkHero(k, x, groundY){
   const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(groundY * HD) - RIG_GROUND;
@@ -4747,7 +4748,9 @@ function heroDraw(k, c, p, X, Y){
   // firelight comes and goes
   const level = lit && lit.flicker ? Math.floor(vnoise(life.clock * 7, 5, 1, 19) * 2.99) : 1;
   rigDraw(k.g, c, p, X, Y, 1, lit, level);
-  if (a && a.prop) PROPS[a.prop](k, p, a, X, Y);
+  // k.holding: something they keep in hand whenever an action isn't giving them something else
+  const prop = a && a.prop || k.holding;
+  if (prop) PROPS[prop](k, p, a, X, Y);
 }
 
 // ---- things they carry ----
