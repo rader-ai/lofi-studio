@@ -2484,64 +2484,6 @@ function painter(w = DW, h = DH, opts = {}){
         put(X, Y, pick(rp, v, X, Y));
       }
     },
-    // a cumulus: rounded billows of uneven size over a flat base give the lumpy outline,
-    // but the inside is shaded as ONE mass: soft bands that follow the outer edge (bright
-    // crown, shadowed underside), with only a faint lift where each billow starts.
-    // light says where its light comes from: {side} leans it toward one flank (positive is
-    // lit from the left), {rim} adds a bright edge on that flank, {under} lights it from below
-    // like a sunset, {back} puts the light behind it, for a silver lining and a dark heart.
-    cloud(cx, cy, ww, hh, cols, seed, light = {}){
-      const rp = ramp(cols), n = rp.length, r = mulberry32(seed);
-      const CX = R(cx), CY = R(cy), HW = R(ww / 2), HH = R(hh), base = CY + Math.round(HH * .3), slab = HH * .28;
-      const lobes = [], count = Math.max(3, Math.round(ww / 16));
-      for (let i = 0; i < count; i++){
-        const u = ((i + .5) / count + (r() - .5) * .45 / count) * 2 - 1, env = Math.pow(1 - u * u, .6);
-        const rad = HH * (.32 + .5 * env) * (.8 + r() * .45), lift = HH * (.25 + .9 * env) * (.75 + r() * .4);
-        lobes.push({x: CX + u * HW * .9, y: base - lift + rad, r: rad});
-      }
-      for (let i = 0; i < Math.max(1, Math.floor(count / 3)); i++){
-        const u = (r() * 2 - 1) * .65, rad = HH * (.3 + r() * .18);
-        lobes.push({x: CX + u * HW, y: base - HH * .32 + rad, r: rad});
-      }
-      const left = Math.floor(Math.min(...lobes.map(L => L.x - L.r))), right = Math.ceil(Math.max(...lobes.map(L => L.x + L.r)));
-      const shade = new Map(), whole = new Set(), at = (X, Y) => X * 4096 + Y;
-      for (let X = left; X <= right; X++){
-        // the outer top edge of the whole cloud at this column
-        let top = X > left + 2 && X < right - 2 ? base - slab : 1e9;
-        for (const L of lobes){ const dx = X - L.x; if (Math.abs(dx) < L.r) top = Math.min(top, L.y - Math.sqrt(L.r * L.r - dx * dx)); }
-        if (top >= 1e9) continue;
-        const floor = base + Math.round(Math.sin(X * .05 + seed) * 1.2);
-        for (let Y = Math.floor(top); Y <= floor; Y++){
-          let ownerArc = -1e9, owner = null;
-          for (const L of lobes){
-            const dx = X - L.x; if (Math.abs(dx) >= L.r) continue;
-            const half = Math.sqrt(L.r * L.r - dx * dx), arc = L.y - half;
-            if (Y >= arc && Y <= L.y + half && arc > ownerArc){ ownerArc = arc; owner = L; }
-          }
-          const down = (Y - top) / Math.max(1, floor - top);
-          let sh = light.under ? .2 + down * .85 : light.back ? .3 - down * .12 : 1.05 - down * .8;
-          sh -= (X - CX) / HW * (light.side ?? .08);
-          if (owner) sh += .14 * Math.max(0, 1 - (Y - ownerArc) / (owner.r * .7));
-          if (!light.under && !light.back && Y - top < 2) sh += .2;
-          if (Y > floor - 3) sh += light.under ? .1 : -.15;
-          whole.add(at(X, Y));
-          // the underside frays away instead of ending in a straight line
-          if (Y > floor - 5 && (floor - Y) / 5 + bay(X, Y) * .9 + vnoise(X, 0, 9, seed) * .5 < .42) continue;
-          shade.set(at(X, Y), sh * (light.gain ?? 1));
-        }
-      }
-      const dir = Math.sign(light.side || 0);
-      for (const [key, sh0] of shade){
-        const X = Math.floor(key / 4096), Y = key - X * 4096;
-        let sh = sh0;
-        for (let k = 1; k <= 3; k++){
-          const fall = 1 - (k - 1) / 3;
-          if (light.rim && dir && !whole.has(at(X - dir * k, Y))) sh = Math.max(sh, sh0 + light.rim * fall);
-          if (light.back && (!whole.has(at(X - k, Y)) || !whole.has(at(X + k, Y)) || !whole.has(at(X, Y - k)))) sh = Math.max(sh, sh0 + light.back * fall);
-        }
-        put(X, Y, rp[Math.max(0, Math.min(n - 1, Math.floor(sh * n + bay(X, Y) * .5)))]);
-      }
-    },
     strands(cx, topY, rx, len, cols, seed){
       const rp = ramp(cols), CX = R(cx), RX = R(rx), T = R(topY);
       for (let X = CX - RX; X <= CX + RX; X += 2){
@@ -2669,9 +2611,8 @@ function painter(w = DW, h = DH, opts = {}){
 // ---- frame-time drawing (canvas, logical coordinates × HD) ----
 const GLOWS = new Map();
 function glowSprite(rx, ry, c){
-  const key = `${rx}|${ry}|${c}`;
+  const W = Math.round(rx * HD) * 2 + 1, H = Math.round(ry * HD) * 2 + 1, key = `${W}|${H}|${c}`;   // by its real size, or a flickering fire makes a new one every frame
   if (GLOWS.has(key)) return GLOWS.get(key);
-  const W = Math.round(rx * HD) * 2 + 1, H = Math.round(ry * HD) * 2 + 1;
   const p = painter(W, H), col = rgb(c), RX = (W - 1) / 2, RY = (H - 1) / 2;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
     const dd = Math.sqrt(((x - RX) ** 2) / (RX * RX) + ((y - RY) ** 2) / (RY * RY));
@@ -2744,17 +2685,6 @@ function ck(g){
     },
   };
   return k;
-}
-
-const CLOUD_SPRITES = new Map();
-function cloudSprite(w, h, cols, seed, light){
-  const key = `${w}|${h}|${seed}|${cols[0]}|${light ? JSON.stringify(light) : ''}`;
-  if (!CLOUD_SPRITES.has(key)){
-    const p = painter(Math.round((w + h * 2) * HD), Math.round(h * 2 * HD));
-    p.cloud(w / 2 + h, h * 1.55, w, h, cols, seed, light);
-    CLOUD_SPRITES.set(key, p.canvas());
-  }
-  return CLOUD_SPRITES.get(key);
 }
 
 // The two lo-fi characters: a guy and a girl in hoodies, both in headphones. These are
@@ -4691,8 +4621,7 @@ function cloudShadows(k, list, y0, y1, step){
   if (!list) return;
   const g = k.g, cv = SHADOW.cv ||= (() => { const W = 240, H = 60, p = painter(W, H); for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++){ const d = Math.hypot((X - W / 2) / (W / 2), (Y - H / 2) / (H / 2)) + (vnoise(X, Y, 16, 3) - .5) * .5; if (d < 1 && bay(X, Y) + (1 - d) * 1.2 > .5) p.put(X, Y, [18, 42, 54, 1]); } return p.canvas(); })();
   g.save(); g.beginPath(); g.rect(0, y0 * HD, DW, (y1 - y0) * HD); g.clip();
-  g.globalAlpha = .17;
-  list.forEach((c, i) => { if (c.w > 60) g.drawImage(cv, Math.round((c.x * 1.2 - 40) * HD), Math.round((y0 + 4 + (i % 3) * step * 3) * HD), Math.round(c.w * 2.6), 54); });
+  list.forEach((c, i) => { g.globalAlpha = .17 * c.life; if (c.w > 60 && c.kind !== 'wisp' && c.kind !== 'tuft') g.drawImage(cv, Math.round((c.x * 1.2 - 40) * HD), Math.round((y0 + 4 + (i % 3) * step * 3) * HD), Math.round(c.w * 2.6), 54); });
   g.restore();
 }
 // someone on the far hill with a kite, the string slack until a gust takes it
@@ -4992,38 +4921,276 @@ function glowCone(k, cx, top, bottom, spread, a){
   k.g.globalAlpha = 1;
 }
 // ---- the sky ----
-// Clouds that drift across, lit from wherever the light is. o: n, y0, y1 (top of the band), w0,
-// w1 (sizes), speed, cols, seed, parallax (how much walking moves them), light(c) → the light
-// for a cloud, or moon {x, y, r} to light each one from the moon and give any that pass in
-// front of it a silver lining. Returns how much of the moon is covered, 0..1.
+// A cloud isn't a shape. It's thickness that keeps changing: each one is a patch of density, a
+// rough idea of how much cloud there is where, with noise sliding through it two ways at once,
+// so its edges tear, billow and close up again. Where the density runs out there's only sky, so a
+// cloud can thin to wisps and vanish, or gather out of nothing. It's lit by how much cloud the
+// light has come through to reach each pixel, so its bright side is wherever the light is, and
+// each one is repainted a few times a second into a little canvas of its own.
+const CLOUD_MAX_W = 760, CLOUD_MAX_H = 320;
+let CLOUD_BUF = null;
+function cloudBuffers(){
+  if (CLOUD_BUF) return CLOUD_BUF;
+  // tiled noise. Each layer: cells across, cells down, strength, and whether it's folded in the
+  // middle, which makes rounded lumps with creases between them
+  const table = (W, H, layers, seed) => {
+    const out = new Float32Array(W * H);
+    layers.forEach(([cx, cy, amp, fold], l) => {
+      const cells = new Float32Array(cx * cy);
+      for (let i = 0; i < cells.length; i++) cells[i] = hash2(i % cx, Math.floor(i / cx), seed + l);
+      for (let y = 0; y < H; y++){
+        const fy = y / H * cy, y0 = Math.floor(fy), uy = fy - y0, ey = uy * uy * (3 - 2 * uy), y1 = (y0 + 1) % cy;
+        for (let x = 0; x < W; x++){
+          const fx = x / W * cx, x0 = Math.floor(fx), ux = fx - x0, ex = ux * ux * (3 - 2 * ux), x1 = (x0 + 1) % cx;
+          const a = cells[y0 * cx + x0], b = cells[y0 * cx + x1], c = cells[y1 * cx + x0], d = cells[y1 * cx + x1];
+          const v = a + (b - a) * ex + (c - a) * ey + (a - b - c + d) * ex * ey;
+          out[y * W + x] += (fold ? Math.abs(v * 2 - 1) : v) * amp;
+        }
+      }
+    });
+    // centred on 0, and most of it between -.5 and .5
+    let sum = 0, sq = 0;
+    for (const v of out){ sum += v; sq += v * v; }
+    const mean = sum / out.length, spread = Math.sqrt(sq / out.length - mean * mean) * 4;
+    for (let i = 0; i < out.length; i++) out[i] = (out[i] - mean) / spread;
+    return out;
+  };
+  const img = new ImageData(CLOUD_MAX_W, CLOUD_MAX_H);
+  CLOUD_BUF = {
+    puff: table(512, 128, [[11, 3, 1, 1], [21, 5, .8, 1], [43, 11, .55, 1], [85, 21, .3, 0]], 301),
+    wisp: table(512, 128, [[4, 12, 1, 0], [8, 20, .65, 0], [16, 32, .42, 0], [32, 64, .24, 0]], 307),
+    low: table(1024, 1, [[16, 1, 1, 0], [40, 1, .5, 0]], 311),
+    D: new Float32Array(CLOUD_MAX_W * CLOUD_MAX_H), T: new Float32Array(CLOUD_MAX_W * CLOUD_MAX_H),
+    top: new Float32Array(CLOUD_MAX_W), bot: new Float32Array(CLOUD_MAX_W), mid: new Float32Array(CLOUD_MAX_W), img, u32: new Uint32Array(img.data.buffer), luts: new Map(),
+  };
+  return CLOUD_BUF;
+}
+// every colour of a ramp at each of five strengths, ready to write straight into a pixel
+function cloudLut(cols){
+  const B = cloudBuffers(), key = cols.join();
+  let lut = B.luts.get(key);
+  if (!lut){
+    lut = new Uint32Array(cols.length * 5);
+    cols.forEach((col, i) => { const c = rgb(col); for (let a = 0; a < 5; a++) lut[i * 5 + a] = ((a * 255 / 4) << 24 | c[2] << 16 | c[1] << 8 | c[0]) >>> 0; });
+    B.luts.set(key, lut);
+  }
+  return lut;
+}
+// A new cloud, of a kind and a size that's up to chance. grown: it's already there when you
+// arrive; edge: it comes in from upwind; otherwise it gathers out of nothing, somewhere in view.
+function newCloud(o, r, grown, edge){
+  const mix = o.mix || [.34, .2, .34, .12], pick = r(), span = lerp(o.w0, o.w1, r() ** 1.3);
+  const kind = pick < mix[0] ? 'puff' : pick < mix[0] + mix[1] ? 'bank' : pick < mix[0] + mix[1] + mix[2] ? 'wisp' : 'tuft';
+  const tall = o.tall || .2, c = {kind, seedA: Math.floor(r() * 512), seedB: Math.floor(r() * 512), seedC: Math.floor(r() * 128), seedD: Math.floor(r() * 128), seedE: Math.floor(r() * 1024), seedF: Math.floor(r() * 1024),
+    slideA: .5 + r() * .45, slideB: -.35 - r() * .35, liftA: (r() - .5) * .35, roll: .25 + r() * .3, size: .8 + r() * .35, sizeTo: 1, sizeIn: 8 + r() * 30};
+  let w, up, dn, hgt;
+  if (kind === 'wisp'){
+    // long and thin, swept along, high up
+    w = Math.min(CLOUD_MAX_W / HD - 20, span * (1.2 + r() * .8));
+    Object.assign(c, {thick: (2.5 + r() * 4.5) * HD * (.7 + w / 200), bend: (4 + r() * 12) * HD, shear: (r() - .5) * .09, hook: (r() - .3) * 16 * HD, flip: r() < .5, body: .6, fray: 1.9, softTop: .55, softBot: .55, strength: .62 + r() * .3, bright: .86, deep: .18, relief: .7});
+    hgt = Math.min(CLOUD_MAX_H, Math.ceil(c.thick * 4 + c.bend + Math.abs(c.shear) * w * HD + Math.abs(c.hook) + 24));
+    c.base = hgt / 2;
+    Object.assign(c, {rise: 16 + r() * 22, fade: 18 + r() * 26, span: 55 + r() * 110, v: o.speed * (.8 + r() * .7)});
+  } else if (kind === 'tuft'){
+    // a scrap, torn off or just starting
+    w = o.w0 * (.3 + r() * .45);
+    up = Math.max(5, w * tall * HD * (1 + r() * .6)); dn = up * (.5 + r() * .5);
+    Object.assign(c, {body: .8, fray: 1.5, softTop: .16, softBot: .36, strength: .9, bright: .95, deep: .55, relief: 1.2, rise: 8 + r() * 12, fade: 10 + r() * 16, span: 30 + r() * 50, v: o.speed * (.7 + r() * .6)});
+  } else if (kind === 'bank'){
+    // a long low layer, broken along the top and ragged underneath
+    w = Math.min(CLOUD_MAX_W / HD - 20, span * (1.15 + r() * .6));
+    up = Math.max(5, w * tall * HD * (.38 + r() * .3)); dn = up * (.6 + r() * .5);
+    Object.assign(c, {body: .85, fray: 1.35, softTop: .18, softBot: .42, strength: .94, bright: .92, deep: .55, relief: 1.1, rise: 24 + r() * 24, fade: 26 + r() * 30, span: 110 + r() * 170, v: o.speed * (.55 + r() * .5)});
+  } else {
+    // a heaped cloud: lumpy on top and uneven underneath
+    w = span;
+    up = Math.max(6, w * tall * HD * (.85 + r() * .55)); dn = up * (.3 + r() * .4);
+    Object.assign(c, {body: 1, fray: 1.15, softTop: .07, softBot: .3, strength: 1, bright: 1.02, deep: .78, relief: 1.5, rise: 22 + r() * 24, fade: 24 + r() * 30, span: 90 + r() * 170, v: o.speed * (.65 + r() * .7)});
+  }
+  c.W = Math.min(CLOUD_MAX_W, Math.ceil((w + 12) * HD));
+  if (kind !== 'wisp'){
+    Object.assign(c, {up, dn});
+    hgt = Math.min(CLOUD_MAX_H, Math.ceil(up * 2.1 + dn * 2.8 + 24));
+    c.base = Math.min(Math.ceil(up * 2.1) + 12, hgt - Math.ceil(dn * 1.4) - 8);
+  }
+  c.H = hgt; c.w = c.W / HD; c.h = c.H / HD;
+  // where the bulk of it sits along its length: never a tidy oval
+  const prof = c.prof = new Float32Array(c.W), bumps = kind === 'wisp' ? 1 : 3 + Math.floor(r() * 3), lumps = [];
+  for (let i = 0; i < bumps; i++) lumps.push({at: .14 + r() * .72, wide: .17 + r() * .22, high: .55 + r() * .45});
+  const lean = .6 + r() * .9;
+  for (let x = 0; x < c.W; x++){
+    const u = (x + .5) / c.W, e = Math.min(1, Math.min(u, 1 - u) * 5), ends = e * e * (3 - 2 * e);
+    if (kind === 'wisp'){
+      const v = c.flip ? 1 - u : u;
+      prof[x] = Math.min(1, Math.pow(v, .55) * Math.pow(1 - v, lean) * 2.6) * ends;
+    } else {
+      let best = 0;
+      for (const L of lumps){ const q = (u - L.at) / L.wide; best = Math.max(best, L.high * Math.exp(-q * q)); }
+      prof[x] = (.3 + Math.min(1, best * 1.2) * .7) * ends;
+    }
+  }
+  c.y = lerp(o.y0, kind === 'wisp' ? lerp(o.y0, o.y1, .7) : o.y1, r()) - c.h * .2;
+  c.x = edge ? -c.w - 6 : grown ? r() * (SW + c.w) - c.w : r() * (SW - c.w * .4) - c.w * .3;
+  c.age = grown || edge ? c.rise + r() * (c.span - c.rise - c.fade) * .7 : 0;
+  c.sizeTo = .75 + r() * .6;
+  c.clock = r() * 400; c.next = 0; c.life = 1; c.cover = 0;
+  return c;
+}
+// fills the density buffer for one cloud
+function cloudDensity(c, clock){
+  const B = cloudBuffers(), {D, top, bot, mid, low} = B, W = c.W, H = c.H, A = c.kind === 'wisp' ? B.wisp : B.puff, grown = c.life;
+  // Everything slides by fractions of a pixel and is read between its table's cells, so that a
+  // cloud changes a few pixels at a time instead of jumping whenever a layer moves one whole pixel.
+  const around = (v, n) => ((v % n) + n) % n + n;
+  const ax = around(c.seedA + clock * c.slideA, 512), ay = around(c.seedC + clock * c.liftA, 128), bx = around(c.seedB + clock * c.slideB, 512), wx = around(c.seedB + 137 + clock * .22, 512);
+  const bRow = ((c.seedD & 127) << 9), wRow = (((c.seedC + 41) & 127) << 9), rolled = clock * c.roll, lo1 = around(c.seedE + rolled, 1024), lo2 = around(c.seedF - rolled, 1024);
+  const lowAt = v => { const i = Math.floor(v), f = v - i, p = low[i & 1023]; return p + (low[(i + 1) & 1023] - p) * f; };
+  // a young or dying cloud has less to it: only its thickest parts show, and those break up
+  const bias = (grown - 1) * 1.25 + (c.size - 1) * .3, body = c.body, fray = c.fray;
+  if (c.kind === 'wisp'){
+    const mx = W / 2, thick = c.thick * c.size;
+    for (let x = 0; x < W; x++){
+      const u = x / W, tip = c.flip ? 1 - u : u;
+      top[x] = c.base + lowAt(x + lo1) * c.bend + (x - mx) * c.shear + c.hook * tip * tip * tip * tip - c.hook * .2;
+      bot[x] = Math.max(.6, thick * c.prof[x] * (.55 + lowAt(x * 2 + lo2) * 1.3));
+    }
+    for (let y = 0; y < H; y++) for (let x = 0, i = y * W; x < W; x++, i++){
+      const dy = y - top[x], core = 1 - Math.abs(dy) / bot[x];
+      if (core * body + fray * .8 + bias < .1){ D[i] = -1; continue; }
+      // the streaks follow the wisp's own curve
+      const sx = x + ax, sy = dy + ay + 128, ix = sx | 0, iy = sy | 0, fx = sx - ix, fy = sy - iy;
+      const r0 = (iy & 127) << 9, r1 = ((iy + 1) & 127) << 9, c0 = ix & 511, c1 = (ix + 1) & 511;
+      const p = A[r0 | c0], q = A[r0 | c1], v = A[r1 | c0], n1 = p + (q - p) * fx + (v - p) * fy + (p - q - v + A[r1 | c1]) * fx * fy;
+      const tx = x + bx, jx = tx | 0, n2r = (((dy * 2 + c.seedD + 256) | 0) & 127) << 9, n2 = A[n2r | (jx & 511)];
+      D[i] = core * body + (n1 * .66 + (n2 + (A[n2r | ((jx + 1) & 511)] - n2) * (tx - jx)) * .34) * fray + bias - .1;
+    }
+  } else {
+    const base = c.base, up = c.up * (.8 + c.size * .2), dn = c.dn * (.8 + c.size * .2);
+    for (let x = 0; x < W; x++){
+      const pr = c.prof[x], a = clamp(lowAt(x + lo1), -.5, .5), e = clamp(lowAt(x * 2 + lo2), -.5, .5), m = base + clamp(lowAt(x + lo2 + 300), -.5, .5) * dn * .9;
+      mid[x] = m;
+      top[x] = m - up * pr * (.5 + (a + .5) * 1.05);
+      bot[x] = m + dn * Math.sqrt(pr) * (.35 + (e + .5) * 1.15);
+    }
+    const reach = fray * .95 + bias;
+    for (let y = 0; y < H; y++) for (let x = 0, i = y * W; x < W; x++, i++){
+      const tp = top[x], bt = bot[x], m = mid[x];
+      let core = y < m ? (y - tp) / Math.max(1.5, m - tp) : (bt - y) / Math.max(1.5, bt - m);
+      if (core > 0) core = 1 - (1 - core) * (1 - core);   // rounded through the middle, so there's no crease
+      if (core * body + reach < 0){ D[i] = -1; continue; }
+      // the slow layer pushes the quick one around, which curdles the edge instead of just waving it
+      const wc = x + wx, wi = wc | 0, w0 = A[wRow | (wi & 511)], w = (w0 + (A[wRow | ((wi + 1) & 511)] - w0) * (wc - wi)) * 26;
+      const sx = x * .94 + y * .34 + ax + w + 64, sy = y * .94 - x * .34 + ay + w * .5 + 1024, ix = sx | 0, iy = sy | 0, fx = sx - ix, fy = sy - iy;
+      const r0 = (iy & 127) << 9, r1 = ((iy + 1) & 127) << 9, c0 = ix & 511, c1 = (ix + 1) & 511;
+      const p = A[r0 | c0], q = A[r0 | c1], v = A[r1 | c0], n1 = p + (q - p) * fx + (v - p) * fy + (p - q - v + A[r1 | c1]) * fx * fy;
+      const tx = x * .94 - y * .34 + bx + 64, jx = tx | 0, row2 = ((((y * .94 + x * .34) | 0) + (bRow >> 9)) & 127) << 9, n2 = A[row2 | (jx & 511)];
+      D[i] = core * body + (n1 * .72 + (n2 + (A[row2 | ((jx + 1) & 511)] - n2) * (tx - jx)) * .42) * fray + bias;
+    }
+  }
+}
+// Nothing reaches the edge of its own canvas: density drains away first, so there's never a cut line.
+function cloudMargins(c){
+  const {D} = cloudBuffers(), W = c.W, H = c.H, M = 10;
+  for (let y = 0; y < H; y++){
+    const edgeY = Math.min(y, H - 1 - y), row = y * W;
+    if (edgeY < M){ const drain = (M - edgeY) / M * 2.2; for (let x = 0; x < W; x++) D[row + x] -= drain; }
+    for (let x = 0; x < M; x++){ const drain = (M - x) / M * 2.2; D[row + x] -= drain; D[row + W - 1 - x] -= drain; }
+  }
+}
+// One pass from the light's side: each pixel takes in how much cloud lies between it and the light.
+// light: {slope (columns per row, toward the light), below (the light's underneath), gain,
+// moonX, moonY, moonR (in this cloud's pixels), far (how much the moon's light fades with distance)}
+function cloudShade(c, lut, n, L){
+  const {D, T, u32, mid} = cloudBuffers(), W = c.W, H = c.H, wisp = c.kind === 'wisp', fall = wisp ? .12 : Math.min(.3, 1 / Math.max(4, c.up * (c.kind === 'bank' ? .9 : .6)));
+  const {bright, deep, relief, softTop, softBot} = c, softSpan = (c.dn || 8) + 10, veil = c.strength * Math.min(1, c.life * 1.6), slope = L.slope, below = L.below, moon = L.moonX !== undefined, reach = moon ? (L.moonR + 26 * HD) : 0, reach2 = reach * reach;
+  for (let row = 0; row < H; row++){
+    const y = below ? H - 1 - row : row, step = below ? W : -W, off = Math.round((row + 1) * slope) - Math.round(row * slope), lineD = y * W, out = y * CLOUD_MAX_W;
+    for (let x = 0; x < W; x++){
+      const i = lineD + x, d = D[i], xp = x + off, ip = row > 0 && xp >= 0 && xp < W ? i + step + off : -1;
+      const tp = ip < 0 ? 0 : T[ip], solid = d < 0 ? 0 : d > 1 ? 1 : d;
+      T[i] = tp + (solid - tp) * fall;
+      if (d <= 0){ u32[out + x] = 0; continue; }
+      const dither = BAYER[((y & 3) << 2) | (x & 3)], under = wisp ? 0 : (y - mid[x] + 5) / softSpan, soft = under <= 0 ? softTop : under >= 1 ? softBot : softTop + (softBot - softTop) * under;
+      const lev = Math.floor(Math.min(1, d / soft) * veil * 4 + dither + .5);
+      if (lev <= 0){ u32[out + x] = 0; continue; }
+      // the slope toward the light, a little blurred so the inside rolls rather than looking like rock
+      const soft0 = (D[i - 1] + D[i] * 2 + D[i + 1]) / 4, soft1 = ip < 2 ? -.4 : (D[ip - 1] + D[ip] * 2 + D[ip + 1]) / 4;
+      let lift = soft0 - soft1; if (lift > .4) lift = .4; else if (lift < -.4) lift = -.4;
+      let sh = bright - T[i] * deep + lift * relief * L.relief, gain = L.gain;
+      if (moon){
+        const dx = x - L.moonX, dy = y - L.moonY, q = dx * dx + dy * dy;
+        gain -= Math.min(1, Math.abs(dx) / (150 * HD)) * L.far;
+        // right by the moon, the thin edges shine and the thick parts go dark
+        if (q < reach2){ const m = 1 - Math.sqrt(q) / reach, back = .22 + Math.max(0, .95 - d * 2.3); sh += (back - sh) * Math.min(1, m * 1.7); }
+      }
+      let idx = Math.floor(sh * gain * n + dither * .4);
+      if (idx < 0) idx = 0; else if (idx >= n) idx = n - 1;
+      u32[out + x] = lut[idx * 5 + (lev > 4 ? 4 : lev)];
+    }
+  }
+}
+function paintCloud(c, o){
+  const B = cloudBuffers(), cols = o.cols;
+  if (!c.cv){ c.cv = document.createElement('canvas'); c.g = c.cv.getContext('2d', {willReadFrequently: true}); }
+  if (c.cv.width !== c.W || c.cv.height !== c.H){ c.cv.width = c.W; c.cv.height = c.H; }
+  cloudDensity(c, c.clock);
+  cloudMargins(c);
+  const midX = c.x + c.w / 2, midY = c.y + c.base / HD;
+  let L;
+  if (o.moon){
+    const M = o.moon, dx = M.x - midX, dy = midY - M.y;
+    L = {below: dy < -3, slope: clamp(dx / Math.max(8, Math.abs(dy)), -2.2, 2.2), relief: .55, gain: .92, far: .34, moonX: (M.x - c.x) * HD, moonY: (M.y - c.y) * HD, moonR: M.r * HD};
+  } else {
+    const S = o.light || {};
+    L = {below: !!S.under, slope: S.under ? clamp(((S.sunX ?? midX) - midX) / 130, -.7, .7) : -(S.side ?? .08) * 3, relief: S.under ? .55 : 1, gain: S.gain ?? 1};
+  }
+  cloudShade(c, cloudLut(cols), cols.length, L);
+  // how much of the moon this cloud is covering, for whoever wants to know
+  c.cover = 0;
+  if (o.moon){
+    const X = Math.round(L.moonX), Y = Math.round(L.moonY), R = Math.round(L.moonR * .7);
+    if (X >= -R && X < c.W + R && Y >= -R && Y < c.H + R){
+      let hit = 0;
+      for (const [ax, ay] of [[0, 0], [R, 0], [-R, 0], [0, R], [0, -R], [R, R], [-R, R], [R, -R], [-R, -R]]){
+        const px = X + ax, py = Y + ay;
+        if (px >= 0 && py >= 0 && px < c.W && py < c.H && B.D[py * c.W + px] > .12) hit++;
+      }
+      c.cover = hit / 9 * Math.min(1, c.strength * 1.2);
+    }
+  }
+  c.g.putImageData(B.img, 0, 0, 0, 0, c.W, c.H);
+}
+// Clouds drifting across, each going through its own life: gathering, swelling or thinning, and
+// finally dissolving, with new ones taking their place. o: n, y0, y1 (top of the band), w0, w1
+// (sizes), speed, cols, seed, tall, parallax (how much walking moves them), mix (shares of heaped,
+// bank, wisp, scrap), then light {side, under, sunX, gain} or moon {x, y, r} to light each one
+// from the moon, with a silver edge on any that pass close by. Returns how much of the moon is covered, 0..1.
 function cloudDeck(k, t, dt, key, o){
-  const list = drifting(key, o.n, i => {
-    const r = mulberry32((o.seed || 1) + i * 31), w = Math.round(lerp(o.w0, o.w1, r()));
-    return {x: (i + r() * .7) * (SW + 80) / o.n - 40, y: lerp(o.y0, o.y1, r()), w, h: Math.round(w * (o.tall || .2) * (.8 + r() * .5)), s: (o.seed || 1) + i * 7, v: o.speed * (.65 + r() * .7)};
-  });
-  let cover = 0;
+  const r = pst[key + 'Chance'] ||= mulberry32((o.seed || 1) * 97 + 5);
+  const list = drifting(key, o.n, () => newCloud(o, r, true));
+  let cover = 0, painted = false;
   for (const c of list){
     c.x += (c.v - scene.speed * (o.parallax || 0)) * dt;
-    if (c.x > SW + 12) c.x = -c.w - c.h * 2 - 12;
-    if (c.x < -c.w - c.h * 2 - 14) c.x = SW + 10;
-    const cx = c.x + c.w / 2 + c.h;
-    if (o.moon){
-      const dx = cx - o.moon.x, reach = c.w / 2 + o.moon.r + 4, near = 1 - clamp((Math.abs(dx) - reach) / 26, 0, 1), far = clamp((Math.abs(dx) - reach - 20) / 70, 0, 1);
-      k.img(cloudSprite(c.w, c.h, o.cols, c.s, {side: Math.sign(dx || 1) * .5, rim: .26, gain: .88}), c.x, c.y);
-      // the farther from the moon, the less of its light reaches a cloud
-      if (far > 0){
-        k.g.globalAlpha = far;
-        k.img(cloudSprite(c.w, c.h, o.cols, c.s, {side: Math.sign(dx || 1) * .32, rim: .08, gain: .6}), c.x, c.y);
-        k.g.globalAlpha = 1;
-      }
-      if (near > 0){
-        k.g.globalAlpha = near;
-        k.img(cloudSprite(c.w, c.h, o.cols, c.s, {back: .75}), c.x, c.y);
-        k.g.globalAlpha = 1;
-      }
-      const top = c.y + c.h * .4, bottom = c.y + c.h * 1.9;
-      if (Math.abs(dx) < c.w / 2 && o.moon.y > top && o.moon.y < bottom) cover = Math.max(cover, 1 - Math.abs(dx) / (c.w / 2));
-    } else k.img(cloudSprite(c.w, c.h, o.cols, c.s, o.light), c.x, c.y);
+    if (!reduceMotion){
+      c.age += dt; c.clock += dt;
+      if ((c.sizeIn -= dt) <= 0){ c.sizeTo = .7 + r() * .7; c.sizeIn = 20 + r() * 40; }
+      c.size += (c.sizeTo - c.size) * Math.min(1, dt * .05);
+    }
+    if (c.age >= c.span || c.x > SW + 8 || c.x < -c.w - 12){
+      // for anyone who'd rather things stayed still, nothing gathers: it just drifts in, fully formed
+      const gone = c.x > SW + 8 || c.x < -c.w - 12;
+      Object.assign(c, newCloud(o, r, false, reduceMotion || (gone && r() < .5)));
+    }
+    const a = clamp(c.age / c.rise, 0, 1), b = clamp((c.span - c.age) / c.fade, 0, 1), e = Math.min(a, b);
+    c.life = e * e * (3 - 2 * e);
+    // a few repaints a second is plenty, and never more than one in a frame after the first
+    if (!c.cv || (!painted && c.clock >= c.next)){
+      paintCloud(c, o);
+      painted = c.cv && dt > 0;
+      c.next = c.clock + .1 + c.W * c.H / 400000;
+    }
+    k.img(c.cv, c.x, c.y);
+    if (c.cover > cover) cover = c.cover;
   }
   return cover;
 }
@@ -6033,7 +6200,7 @@ const PLACES = {
         for (let i = 0; i < 16; i++) k.dot(ss.x - i * 1.1, ss.y - i * .33, `rgba(240,235,255,${(1 - i / 16) * Math.min(1, ss.life * 2)})`);
       }
       k.glow(262, 28, 22, '#c8b8ff', .15 + beat * .25);
-      cloudDeck(k, t, dt, 'cClouds', {n: 4, y0: 6, y1: 60, w0: 60, w1: 150, speed: 1.2, cols: C_CASTLE_LIT, seed: 61, tall: .1, parallax: .02, moon: {x: 262, y: 28, r: 12}});
+      cloudDeck(k, t, dt, 'cClouds', {mix: [.2, .3, .4, .1], n: 6, y0: 6, y1: 60, w0: 60, w1: 150, speed: 1.2, cols: C_CASTLE_LIT, seed: 61, tall: .1, parallax: .02, moon: {x: 262, y: 28, r: 12}});
       rare(k, t, dt, 'cSky', {dragon: dragonSight(28), comet: cometSight}, [30, 70]);
       for (const b of drifting('cBats', 3, i => ({x: SW + 20 + i * 150, y: 18 + i * 14, v: 18 + i * 5, p: i * 2}))){
         b.x -= b.v * dt;
@@ -6188,7 +6355,7 @@ const PLACES = {
       g.save(); g.beginPath(); g.rect(40 * HD, 18 * HD, 112 * HD, 78 * HD); g.clip();
       starField(k, t, 'officeStars', 90, 50, 21, 0);
       moonOrb(k, 132 + Math.sin(t / 240) * 3, 30, 4, .35);
-      cloudDeck(k, t, dt, 'officeClouds', {n: 3, y0: 12, y1: 40, w0: 30, w1: 66, speed: .9, cols: C_MOONLIT, seed: 9, tall: .16, moon: {x: 132, y: 30, r: 4}});
+      cloudDeck(k, t, dt, 'officeClouds', {mix: [.2, .3, .4, .1], n: 4, y0: 12, y1: 40, w0: 30, w1: 66, speed: .9, cols: C_MOONLIT, seed: 9, tall: .16, moon: {x: 132, y: 30, r: 4}});
       rare(k, t, dt, 'officeSky', {plane: planeSight, lightning: lightningSight(40, 152)}, [10, 30]);
       g.restore();
       k.img(placeBg('office'), 0, 0);
@@ -6285,7 +6452,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion;
       k.img(placeSky('park'), 0, 0);
-      cloudDeck(k, t, dt, 'parkClouds', {n: 5, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, light: {side: -.28, rim: .1}});
+      cloudDeck(k, t, dt, 'parkClouds', {n: 7, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, light: {side: -.28, rim: .1}});
       rare(k, t, dt, 'parkSky', {kite: kiteSight, balloon: balloonSight}, [14, 40]);
       for (const b of drifting('parkBirds', 2, i => ({x: SW + i * 160, y: 20 + i * 14, p: i * 2}))){
         b.x -= 16 * dt;
@@ -6371,15 +6538,15 @@ const PLACES = {
       starField(k, t, 'lakeStars', 130, 80, 41);
       shootingStars(k, dt, 'lakeShoot', 30, 220, 4, 40, [16, 50]);
       moonOrb(k, mx, my, 11, .38);
-      const before = pst.lakeClouds, cover = cloudDeck(k, t, dt, 'lakeClouds', {n: 3, y0: 2, y1: 40, w0: 60, w1: 130, speed: 1, cols: C_MOONLIT, seed: 3, tall: .12, moon: {x: mx, y: my, r: 11}});
+      const cover = cloudDeck(k, t, dt, 'lakeClouds', {mix: [.2, .3, .4, .1], n: 5, y0: 2, y1: 40, w0: 60, w1: 130, speed: 1, cols: C_MOONLIT, seed: 3, tall: .12, moon: {x: mx, y: my, r: 11}});
       rare(k, t, dt, 'lakeSky', {comet: cometSight, bats: () => batSight(mx - 60, my + 26)}, [30, 70]);
       k.img(placeBg('lake'), 0, 0);
       // the clouds drift in the water too, upside down and faint
       g.save(); g.beginPath(); g.rect(0, 84 * HD, DW, 66 * HD); g.clip();
       g.globalAlpha = .1; g.globalCompositeOperation = 'lighter';
       for (const c of pst.lakeClouds){
-        const cv = cloudSprite(c.w, c.h, C_MOONLIT, c.s, {side: Math.sign(c.x + c.w / 2 + c.h - mx || 1) * .5, rim: .26, gain: .88}), Y = Math.round((168 - c.y) * HD);
-        g.save(); g.translate(Math.round(c.x * HD), Y); g.scale(1, -1); g.drawImage(cv, 0, 0); g.restore();
+        const Y = Math.round((168 - c.y) * HD);
+        g.save(); g.translate(Math.round(c.x * HD), Y); g.scale(1, -1); g.drawImage(c.cv, 0, 0); g.restore();
       }
       g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.restore();
       fishJumps(k, t, dt, 'lakeFish', 214, 300, 96, 124);
@@ -6566,7 +6733,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion;
       k.img(placeSky('garden'), 0, 0);
-      cloudDeck(k, t, dt, 'gardenClouds', {n: 4, y0: 0, y1: 30, w0: 36, w1: 90, speed: 1.5, cols: C_DAY, seed: 21, tall: .24, light: {side: .28, rim: .1}});
+      cloudDeck(k, t, dt, 'gardenClouds', {n: 6, y0: 0, y1: 30, w0: 36, w1: 90, speed: 1.5, cols: C_DAY, seed: 21, tall: .24, light: {side: .28, rim: .1}});
       k.img(placeBg('garden'), 0, 0);
       for (const m of gardenTrees()) drawClumps(k, m.clumps, t, still);
       k.img(placeFg('garden'), 0, 0);
@@ -6683,7 +6850,7 @@ const PLACES = {
       shootingStars(k, dt, 'forestShoot', 90, 300, 6, 44);
       const mx = 60 + Math.sin(t / 260) * 7, my = 22 - Math.cos(t / 260) * 2;
       moonOrb(k, mx, my, 7, .42 * (1 - (pst.forestDim || 0) * .6));
-      const cover = cloudDeck(k, t, dt, 'forestClouds', {n: 3, y0: 2, y1: 34, w0: 56, w1: 130, speed: 1.3, cols: C_MOONLIT, seed: 5, tall: .14, moon: {x: mx, y: my, r: 7}});
+      const cover = cloudDeck(k, t, dt, 'forestClouds', {mix: [.2, .3, .4, .1], n: 5, y0: 2, y1: 34, w0: 56, w1: 130, speed: 1.3, cols: C_MOONLIT, seed: 5, tall: .14, moon: {x: mx, y: my, r: 7}});
       pst.forestDim = (pst.forestDim || 0) + (cover - (pst.forestDim || 0)) * Math.min(1, dt * 1.2);
       rare(k, t, dt, 'forestSky', {comet: cometSight, bats: () => batSight(mx + 40, my + 22), owl: owlFlight(mx, my, 282, 77)}, [22, 55]);
       k.img(placeBg('forest'), 0, 0);
@@ -6724,7 +6891,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion, sc = scene.scroll;
       k.img(placeSky('beach'), 0, 0);
-      cloudDeck(k, t, dt, 'beachClouds', {n: 6, y0: 2, y1: 48, w0: 36, w1: 110, speed: 1.1, cols: C_SUNSET, seed: 41, tall: .17, parallax: .012, light: {under: 1}});
+      cloudDeck(k, t, dt, 'beachClouds', {mix: [.32, .3, .28, .1], n: 8, y0: 2, y1: 48, w0: 36, w1: 110, speed: 1.1, cols: C_SUNSET, seed: 41, tall: .17, parallax: .012, light: {under: 1, sunX: 160}});
       rare(k, t, dt, 'beachSky', {pelicans: pelicanSight}, [40, 90]);
       for (const b of drifting('gulls', 3, i => ({x: SW * (i + .5) / 3, y: 22 + i * 12, v: 11 + i * 4, p: i, dir: i % 2 ? 1 : -1}))){
         b.x += b.dir * b.v * dt;
