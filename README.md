@@ -12,7 +12,7 @@
 
 Eight vibes, eight places, eight bands. Swipe from the castle wall to the rainy office and a boom bap Rhodes gives way to felt piano and deep sub bass. Swipe again and a jazz trio picks up in the coffee shop. The weather, the birds and the lights are painted live in code, and the little monitors and torches react to what's playing.
 
-Stay a while and the place keeps going. Walk the beach and the pier falls behind you while boats, a lifeguard's tower and a sandcastle come along, and now and then a crab scuttles past or a whale breaches. At the campfire the moon lights every tree from its own side, a fox crosses the clearing, and someone roasts a marshmallow until it catches fire. Whoever's there is alive too: they blink, yawn, stretch, run a hand through their hair, sneeze hard enough to send the birds off, and now and then turn and wink at you.
+Stay a while and the place keeps going. Walk the beach and the pier falls behind you while boats, a lifeguard's tower and a sandcastle come along, and now and then a crab scuttles past or a whale breaches. At the campfire the moon lights every tree from its own side, a fox crosses the clearing and warms as it reaches the firelight, and someone roasts a marshmallow until it catches fire. Light comes from somewhere here: shadows fan out from the low sun as you walk the beach, the sea gives back the clouds, and a cloud over the sun takes the light off the whole park. Whoever's there is alive too: they blink, yawn, stretch, run a hand through their hair, sneeze hard enough to send the birds off, and now and then turn and wink at you.
 
 <table>
 <tr>
@@ -79,7 +79,7 @@ Everything changes while it plays.
 
 <h2><img src="docs/readme/plate-file.png" width="100%" alt="All of it in one HTML file"></h2>
 
-Open `index.html` and it's all there: about 7,700 lines, no framework and no build step. The page loads [Tone.js](https://tonejs.github.io/) and two pixel fonts, and that's all it needs.
+Open `index.html` and it's all there: about 8,000 lines, no framework and no build step. The page loads [Tone.js](https://tonejs.github.io/) and two pixel fonts, and that's all it needs.
 
 - **The music** comes from a small step sequencer and synths built on Tone.js. Each chord progression has a style that sets its groove, drum kit, comping, bass line and choice of lead.
 - **The worlds** are painted in code with a small hi-bit toolkit: hue-shifted color ramps, ordered dithering, gusts of wind that roll through the grass, clouds that gather and dissolve, surf drawn a pixel at a time, and everything from a songbird to a breaching whale built out of simple shapes.

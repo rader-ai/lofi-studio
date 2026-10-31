@@ -2366,6 +2366,7 @@ function painter(w = DW, h = DH, opts = {}){
 
   const p = {
     put, get, w, h, noise, hsh,
+    sun: -1,   // which side bevels and domes are lit from: -1 left, 1 right
     canvas(){ const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').putImageData(img, 0, 0); return c; },
     // A lawn of grass tufts: little fans of pointed blades, planted from the back to the
     // front so nearer tufts overlap farther ones. They grow from tiny V's at the back to
@@ -2466,9 +2467,9 @@ function painter(w = DW, h = DH, opts = {}){
     },
     // bevelled block: light top/left, dark bottom/right; cols = [dark, base, light]
     box(x, y, ww, hh, cols, outline){
-      const [dk, bs, lt] = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh);
+      const [dk, bs, lt] = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh), near = p.sun < 0 ? X0 : X1 - 1, far = p.sun < 0 ? X1 - 1 : X0;
       for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++)
-        put(X, Y, (Y === Y0 || X === X0) ? lt : (Y === Y1 - 1 || X === X1 - 1) ? dk : bs);
+        put(X, Y, (Y === Y0 || X === near) ? lt : (Y === Y1 - 1 || X === far) ? dk : bs);
       if (outline){
         const o = rgb(outline);
         for (let X = X0 - 1; X <= X1; X++){ put(X, Y0 - 1, o); put(X, Y1, o); }
@@ -2476,11 +2477,11 @@ function painter(w = DW, h = DH, opts = {}){
       }
     },
     wood(x, y, ww, hh, cols, seed, vertical){
-      const rp = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh);
+      const rp = ramp(cols), [X0, Y0, X1, Y1] = box(x, y, ww, hh), near = p.sun < 0 ? X0 : X1 - 1, far = p.sun < 0 ? X1 - 1 : X0;
       for (let Y = Y0; Y < Y1; Y++) for (let X = X0; X < X1; X++){
         const gr = vertical ? noise(X * 4, Y * .5, 10, seed) : noise(X * .5, Y * 4, 10, seed);
         let v = .2 + gr * .55;
-        if (Y === Y0 || X === X0) v = .92; else if (Y === Y1 - 1 || X === X1 - 1) v = .02;
+        if (Y === Y0 || X === near) v = .92; else if (Y === Y1 - 1 || X === far) v = .02;
         put(X, Y, pick(rp, v, X, Y));
       }
     },
@@ -2499,9 +2500,11 @@ function painter(w = DW, h = DH, opts = {}){
       const rp = ramp(cols), n = rp.length, rim = opts.rim && rgb(opts.rim);
       for (let X = 0; X < w; X++){
         const top = R(fn(X / HD));
+        // opts.sunX: a slope facing the light catches it, and one facing away falls into shade
+        const face = opts.sunX === undefined ? 0 : clamp((fn((X + 6) / HD) - fn((X - 6) / HD)) / (6 / HD * 2) * Math.sign(opts.sunX - X / HD) * (opts.slope ?? 4), -1, 1);
         for (let Y = top; Y < h; Y++){
           const depth = Math.min(1, (Y - top) / R(opts.depth || 30));
-          put(X, Y, pick(rp, .9 - depth * .65 + (noise(X, Y, 8, seed) - .5) * (opts.rough ?? .45), X, Y));
+          put(X, Y, pick(rp, .9 - depth * .65 + (noise(X, Y, 8, seed) - .5) * (opts.rough ?? .45) + face * .3 * (1 - depth * .4), X, Y));
         }
         if (rim) put(X, top, rim);
         if (opts.blades && hsh(X, 3, seed) < .5){
@@ -2602,7 +2605,7 @@ function painter(w = DW, h = DH, opts = {}){
     dome(cx, cy, r, cols){
       const rp = ramp(cols), X0 = R(cx), Y0 = R(cy), rr = R(r);
       for (let y = -rr; y <= 0; y++) for (let x = -rr; x <= rr; x++)
-        if (x*x + y*y <= rr*rr) put(X0 + x, Y0 + y, pick(rp, .55 - x / rr * .45 - y / rr * .15, X0 + x, Y0 + y));
+        if (x*x + y*y <= rr*rr) put(X0 + x, Y0 + y, pick(rp, .55 + p.sun * x / rr * .45 - y / rr * .15, X0 + x, Y0 + y));
     },
   };
   return p;
@@ -2971,17 +2974,31 @@ function rigHair(x, y, swing, front){
 
 // Everyone takes the light of the place they're in: dimmed and tinted by the ambient light,
 // with a rim of brighter colour down the side the light comes from. id names the light, dim
-// and tint its ambient part, rim, rimAmt and side (1 right, -1 left) its direct part. flicker
-// lets a fire's light come and go.
+// and tint its ambient part, rim, rimAmt and side (1 right, -1 left) its direct part, with rim2 for
+// a second light on the other side. flicker lets a fire's light come and go.
+// The rest says where the light really is, so that everything can agree on it. key is the sun or
+// moon: x where it hangs, horizon the row under it (shadows run away from that point, the way a
+// road's edges run to the horizon), long how far a shadow stretches for its height (a low sun's
+// are long), shadow how dark, col its colour. spots are local lights: where, how far they reach,
+// and their colour. far is how dim someone is away from all of them, seat the ground under someone
+// sitting down, and ink the colour of a shadow here, which is never black.
 const LIGHTS = {
-  forest: {id: 'f', dim: .66, tint: [14, 20, 52], tintAmt: .22, rim: '#ffa050', rimAmt: .6, side: 1, flicker: true},
-  lake:   {id: 'l', dim: .62, tint: [16, 24, 64], tintAmt: .3, rim: '#aebcf0', rimAmt: .45, side: 1},
-  castle: {id: 'c', dim: .72, tint: [30, 18, 70], tintAmt: .22, rim: '#b8a8ff', rimAmt: .35, side: 1},
-  office: {id: 'o', dim: .82, tint: [30, 20, 50], tintAmt: .14, rim: '#7fe8dc', rimAmt: .38, side: 1},
-  cafe:   {id: 'k', dim: .96, tint: [60, 30, 10], tintAmt: .08, rim: '#ffd090', rimAmt: .25, side: 1},
-  beach:  {id: 'b', dim: .86, tint: [70, 30, 80], tintAmt: .16, rim: '#ffb070', rimAmt: .55, side: 1},
-  garden: {id: 'g', dim: 1, tint: [0, 0, 0], tintAmt: 0, rim: '#fff6d8', rimAmt: .3, side: -1},
-  park:   {id: 'p', dim: 1, tint: [0, 0, 0], tintAmt: 0, rim: '#fff6d8', rimAmt: .3, side: 1},
+  forest: {id: 'f', dim: .66, tint: [14, 20, 52], tintAmt: .22, rim: '#ffa050', rimAmt: .6, side: 1, flicker: true, rim2: '#a4b4ec', rimAmt2: .42, side2: -1, far: .46, ink: '#03040c', seat: 124,
+    key: {x: 60, horizon: 100, long: .9, shadow: .14, col: '#aebcf0'}, spots: [{x: 208, y: 122, r: 92, col: '#ff8a40', long: 1.15, shadow: .36, fire: true}]},
+  lake:   {id: 'l', dim: .62, tint: [16, 24, 64], tintAmt: .3, rim: '#aebcf0', rimAmt: .45, side: 1, far: .62, ink: '#02040e',
+    key: {x: 262, horizon: 84, long: .9, shadow: 0, col: '#aebcf0'}, spots: [{x: 7, y: 94, r: 60, col: '#ffb050'}]},
+  castle: {id: 'c', dim: .72, tint: [30, 18, 70], tintAmt: .22, rim: '#b8a8ff', rimAmt: .35, side: 1, far: .62, ink: '#05030e',
+    key: {x: 262, horizon: 118, long: .9, shadow: 0, col: '#b8a8ff'}},
+  office: {id: 'o', dim: .82, tint: [30, 20, 50], tintAmt: .14, rim: '#7fe8dc', rimAmt: .38, side: 1, far: .72, ink: '#06040a',
+    spots: [{x: 172, y: 86, r: 110, col: '#ffb060'}, {x: 120, y: 88, r: 60, col: '#4fd1c5'}]},
+  cafe:   {id: 'k', dim: .96, tint: [60, 30, 10], tintAmt: .08, rim: '#ffd090', rimAmt: .25, side: 1, rim2: '#bcd8ff', rimAmt2: .3, side2: -1, ink: '#140a06',
+    spots: [{x: 72, y: 60, r: 90, col: '#cfe4ff'}, {x: 168, y: 24, r: 90, col: '#ffc070'}, {x: 300, y: 24, r: 90, col: '#ffc070'}]},
+  beach:  {id: 'b', dim: .86, tint: [70, 30, 80], tintAmt: .16, rim: '#ffb070', rimAmt: .55, side: 1, ink: '#34204a',
+    key: {x: 160, horizon: 76, long: 1.9, shadow: .36, col: '#ffb070'}},
+  garden: {id: 'g', dim: 1, tint: [0, 0, 0], tintAmt: 0, rim: '#fff6d8', rimAmt: .3, side: -1, ink: '#14301f', seat: 124,
+    key: {x: 40, horizon: 100, long: .5, shadow: .3, col: '#fff6d8'}},
+  park:   {id: 'p', dim: 1, tint: [0, 0, 0], tintAmt: 0, rim: '#fff6d8', rimAmt: .3, side: 1, ink: '#14301f', seat: 127,
+    key: {x: 272, horizon: 100, long: .5, shadow: .3, col: '#fff6d8'}},
 };
 const PALETTES = new Map(), rigImg = new ImageData(RIG_W, RIG_H), rigOut = new Uint32Array(rigImg.data.buffer), EYE = code('e');
 const pack = c => (255 << 24 | Math.round(c[2]) << 16 | Math.round(c[1]) << 8 | Math.round(c[0])) >>> 0;
@@ -2989,7 +3006,7 @@ function rigPalette(colors, light, level){
   const key = colors.o + colors.h + (light ? light.id + level : '');
   let pal = PALETTES.get(key);
   if (pal) return pal;
-  pal = {body: new Uint32Array(128), rim: new Uint32Array(128)};
+  pal = {body: new Uint32Array(128), rim: new Uint32Array(128), rim2: new Uint32Array(128)};
   const all = {...colors, m: '#7a2a3a', W: css(mixA(rgb(colors.w), [26, 16, 64], .28))};
   for (const [ch, col] of Object.entries(all)){
     if (ch.length !== 1) continue;
@@ -2997,6 +3014,7 @@ function rigPalette(colors, light, level){
     if (light) c = mixA(c.map(v => v * light.dim), light.tint, light.tintAmt);
     pal.body[code(ch)] = pack(c);
     pal.rim[code(ch)] = pack(light ? mixA(c, rgb(light.rim), light.rimAmt * (.72 + level * .28)) : c);
+    pal.rim2[code(ch)] = pack(light && light.rim2 ? mixA(c, rgb(light.rim2), light.rimAmt2) : c);
   }
   PALETTES.set(key, pal);
   return pal;
@@ -3012,13 +3030,19 @@ function rigFrame(c, p, dir = 1, light = null, level = 1){
     POSES.delete(old); cv = spare;
   } else cv = Object.assign(document.createElement('canvas'), {width: RIG_W, height: RIG_H});
   rigPaint(c, p);
-  const pal = rigPalette(c.colors, light, level), side = light ? light.side : 0;
-  for (let y = 0; y < RIG_H; y++) for (let x = 0; x < RIG_W; x++){
-    const i = y * RIG_W + x, v = rigPx[i];
-    // a colour pixel with nothing but outline or air on the light's side catches the light
-    const lit = side && v && v !== INK && v !== EYE && (!rigPx[i + side] || rigPx[i + side] === INK);
-    rigOut[y * RIG_W + (dir < 0 ? RIG_W - 1 - x : x)] = lit ? pal.rim[v] : pal.body[v];
+  const pal = rigPalette(c.colors, light, level), side = light ? light.side * dir : 0, side2 = light && light.rim2 ? light.side2 * dir : 0, rows = [];
+  for (let y = 0; y < RIG_H; y++){
+    let first = -1, last = -1;
+    for (let x = 0; x < RIG_W; x++){
+      const i = y * RIG_W + x, v = rigPx[i];
+      if (v){ if (first < 0) first = x; last = x; }
+      // a colour pixel with nothing but outline or air on the light's side catches the light
+      const colour = v && v !== INK && v !== EYE;
+      rigOut[y * RIG_W + (dir < 0 ? RIG_W - 1 - x : x)] = colour && side && (!rigPx[i + side] || rigPx[i + side] === INK) ? pal.rim[v] : colour && side2 && (!rigPx[i + side2] || rigPx[i + side2] === INK) ? pal.rim2[v] : pal.body[v];
+    }
+    if (first >= 0) rows.push(dir < 0 ? [y, RIG_W - 1 - last, RIG_W - 1 - first] : [y, first, last]);
   }
+  cv._rows = rows;   // its silhouette, row by row, for casting its shadow
   cv.getContext('2d').putImageData(rigImg, 0, 0);
   POSES.set(key, cv);
   return cv;
@@ -3061,6 +3085,168 @@ function gaitPose(u, g, w = 1){
 }
 const REST = {view: 'R', eyes: 'open', mouth: 'none', tilt: 0, hx: 0, hy: 0, lean: 0, chest: 0, hair: 0, kick: 0, kick2: 0, tap: 0, hipY: 0, nx: 0, ny: 0, ns: 'flat', fx: 3, fy: 0, fs: 'flat'};
 const SEAT_ROW = 32;   // the canvas row of the sitting pose that rests on the seat
+
+// ---- light on whatever's moving ----
+// How much of a place's local light reaches (x, y), from 0 to 3, which side it arrives from, and
+// which light it is. It falls away quickly with distance, the way real light does.
+function lightAt(L, x, y){
+  let best = 0, spot = null;
+  for (const s of L.spots || []){
+    const d = Math.hypot(x - s.x, (y - s.y) * 1.3) / s.r, v = d < 1 ? (1 - d) * (1 - d) : 0;
+    if (v > best){ best = v; spot = s; }
+  }
+  const from = spot || L.key, side = from ? Math.sign(from.x - x) || 1 : L.side || 1;
+  return {level: best > .42 ? 3 : best > .18 ? 2 : best > .04 ? 1 : 0, side, spot};
+}
+// A sprite as it looks in this light, at this level, with its edge lit on this side: dim and
+// tinted as the place is, warmer the nearer it is to a lamp or fire. Worked out once for each.
+const LIT = new WeakMap();
+function litSprite(cv, L, level = 0, side = 1, spot = null){
+  if (!L) return cv;
+  let kept = LIT.get(cv);
+  if (!kept) LIT.set(cv, kept = new Map());
+  const key = L.id + level + side + (spot ? spot.col : '');
+  let out = kept.get(key);
+  if (out) return out;
+  const W = cv.width, H = cv.height, src = cv._px ||= cv.getContext('2d').getImageData(0, 0, W, H).data, p = painter(W, H), base = L.far ?? L.dim;
+  const glow = spot ? rgb(spot.col) : null, rimCol = rgb(glow ? spot.col : L.key ? L.key.col : L.rim), rimAmt = glow ? .22 + level * .16 : L.rimAmt * .8;
+  const air = (x, y) => { if (x < 0 || y < 0 || x >= W || y >= H) return true; const i = (y * W + x) * 4; return !src[i + 3] || src[i] + src[i + 1] + src[i + 2] < 70; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+    const i = (y * W + x) * 4;
+    if (!src[i + 3]) continue;
+    const c0 = [src[i], src[i + 1], src[i + 2], 1];
+    let c = mixA(c0.map(v => v * base), L.tint, L.tintAmt * (1 - level * .25));
+    if (level) c = mixA(mixA(c, c0, level * .22), glow, level * .07);
+    // an outline stays dark; colour with nothing beside it on the light's side catches the light,
+    // and so, less, does colour with nothing above it
+    if (src[i] + src[i + 1] + src[i + 2] >= 70){
+      if (air(x + side, y)) c = mixA(c, rimCol, rimAmt);
+      else if (air(x, y - 1)) c = mixA(c, rimCol, rimAmt * .55);
+    }
+    p.put(x, y, [c[0], c[1], c[2], src[i + 3] / 255]);
+  }
+  out = p.canvas(); out.M = cv.M; out.lw = cv.lw; out.lh = cv.lh;
+  kept.set(key, out);
+  return out;
+}
+// A sprite's silhouette, row by row
+function spriteRows(cv){
+  if (cv._rows) return cv._rows;
+  const W = cv.width, H = cv.height, d = cv._px ||= cv.getContext('2d').getImageData(0, 0, W, H).data, rows = [];
+  for (let y = 0; y < H; y++){
+    let first = -1, last = -1;
+    for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3]){ if (first < 0) first = x; last = x; }
+    if (first >= 0) rows.push([y, first, last]);
+  }
+  return cv._rows = rows;
+}
+// Which way a shadow falls from something standing at (x, y), and how dark. From the sun or moon,
+// it runs away from the point on the horizon under the light, so shadows fan out across the ground
+// as a road's edges do. From a lamp or fire, it runs straight away from it, longer the farther off.
+function shadowOf(L, x, y){
+  const at = lightAt(L, x, y), s = at.spot;
+  if (s && s.shadow){
+    const vx = x - s.x, vy = y - s.y, n = Math.hypot(vx, vy) || 1, long = s.long * (1 + n / s.r) * (s.fire ? .92 + vnoise(life.clock * 7, 5, 1, 19) * .16 : 1);
+    return {dx: vx / n * long, dy: vy / n * long, alpha: s.shadow * (.35 + at.level * .22), ink: L.ink};
+  }
+  if (!L.key) return {dx: 0, dy: 0, alpha: 0, ink: L.ink};
+  const K = L.key, vx = x - K.x, vy = Math.max(6, y - K.horizon), n = Math.hypot(vx, vy);
+  return {dx: vx / n * K.long, dy: vy / n * K.long, alpha: K.shadow * (1 - (L.veiled || 0) * .85), ink: L.ink};
+}
+// Lays a sprite's silhouette on the ground: each row, the higher it is, the farther along the shadow.
+// X, Y: the sprite's corner. foot: the row that stands on the ground. baseY: where the ground is.
+const SHADOW_CV = {};
+function castShadow(k, cv, X, Y, foot, baseY, sd){
+  if (sd.alpha <= .01) return;
+  const c = SHADOW_CV.cv ||= Object.assign(document.createElement('canvas'), {width: DW, height: DH}), g = SHADOW_CV.g ||= c.getContext('2d');
+  const rows = spriteRows(cv), flat = Math.abs(sd.dx) > Math.abs(sd.dy) * 1.2;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  g.fillStyle = '#000';
+  for (const [row, a, b] of rows){
+    const h = foot - row;
+    if (h < 0) continue;
+    const f = h / foot;
+    if (flat ? (f > .7 ? h % 3 : f > .4 ? h & 1 : 0) : f > .62 && (h & 1)) continue;   // it thins away toward the far end
+    let px, py, ww, hh;
+    if (flat){
+      // lying along the ground: the row's width runs into the distance, so it's only a little deep
+      ww = Math.ceil(Math.abs(sd.dx)) + 1; hh = Math.max(1, Math.round((b - a + 1) * .2 * (1 - f * .4)));
+      px = Math.round(X + (a + b) / 2 + h * sd.dx); py = Math.round(baseY + h * sd.dy - hh / 2);
+    } else {
+      ww = b - a + 1; hh = Math.max(1, Math.ceil(Math.abs(sd.dy)));
+      px = Math.round(X + a + h * sd.dx); py = Math.round(baseY + h * sd.dy);
+    }
+    g.fillRect(px, py, ww, hh);
+    if (px < x0) x0 = px; if (py < y0) y0 = py; if (px + ww > x1) x1 = px + ww; if (py + hh > y1) y1 = py + hh;
+  }
+  if (x1 < x0) return;
+  x0 = Math.max(0, x0); y0 = Math.max(0, y0); x1 = Math.min(DW, x1); y1 = Math.min(DH, y1);
+  if (x1 <= x0 || y1 <= y0) return;
+  g.globalCompositeOperation = 'source-in'; g.fillStyle = sd.ink; g.fillRect(x0, y0, x1 - x0, y1 - y0); g.globalCompositeOperation = 'source-over';
+  k.g.globalAlpha = sd.alpha;
+  k.g.drawImage(c, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+  k.g.globalAlpha = 1;
+  g.clearRect(x0, y0, x1 - x0, y1 - y0);
+}
+// Something standing on the ground at (X + width / 2, footY), in canvas pixels: shadow, then sprite
+function onGround(k, cv, X, Y, foot = cv.height){
+  const L = k.light;
+  if (!L) return blit(k, cv, X, Y);
+  const gx = (X + cv.width / 2) / HD, gy = (Y + foot) / HD;
+  castShadow(k, cv, X, Y, foot, Y + foot, shadowOf(L, gx, gy));
+  blit(k, cv, X, Y);
+}
+// Water shows what's above it: a sprite's rows upside down from the waterline, broken by ripples
+function mirrorRows(k, cv, X, waterY, alpha, t, n = cv.height){
+  const g = k.g, H = cv.height;
+  g.globalAlpha = alpha;
+  for (let j = 0; j < n; j++){
+    const row = H - 1 - j;
+    if (row < 0) break;
+    if (j % 3 !== 2) g.drawImage(cv, 0, row, cv.width, 1, Math.round(X + Math.sin(t * 2 + j * .7) * (1 + j * .05)), Math.round(waterY + j), cv.width, 1);
+  }
+  g.globalAlpha = 1;
+}
+// A cloud over the sun or moon takes some of the light from everything it was falling on
+function skyDim(k, key, cover, dt, colour, amount, L){
+  const d = pst[key] = (pst[key] || 0) + (cover - (pst[key] || 0)) * Math.min(1, dt * 1.2);
+  if (L) L.veiled = d;
+  if (d > .02){ k.g.fillStyle = `rgba(${colour},${(d * amount).toFixed(3)})`; k.g.fillRect(0, 0, DW, DH); }
+  return d;
+}
+
+// Dust is always in the air, and you only see it where light falls through it. inLight(x, y) says
+// what colour the light is there, if there's any.
+function motes(k, t, dt, key, n, x0, x1, y0, y1, inLight){
+  for (const m of drifting(key, n, () => ({x: x0 + Math.random() * (x1 - x0), y: y0 + Math.random() * (y1 - y0), p: Math.random() * 9}))){
+    if (!reduceMotion){
+      m.x += (vnoise(t * .2, m.p * 7, 1, 31) - .5) * 5 * dt; m.y += ((vnoise(t * .17, m.p * 5, 1, 37) - .5) * 4 - .4) * dt;
+      if (m.x < x0) m.x = x1; if (m.x > x1) m.x = x0; if (m.y < y0) m.y = y1; if (m.y > y1) m.y = y0;
+    }
+    const c = inLight(m.x, m.y);
+    if (c && Math.sin(t * 1.7 + m.p * 3) > -.3) k.dot(m.x, m.y, c);   // it turns as it drifts, and catches the light only some of the time
+  }
+}
+// Long faint rays from a low sun, where its light catches the haze. Painted once; the sky's own movement does the rest.
+const RAYS = new Map();
+function sunRays(k, t, id, x, y, len, col, a){
+  let cv = RAYS.get(id);
+  if (!cv){
+    const W = DW, H = Math.round(y * HD), p = painter(W, H), c = rgb(col), r = mulberry32(id.length * 77 + 5), bands = [];
+    for (let i = 0; i < 9; i++) bands.push({at: -1.35 + r() * 2.7, wide: .03 + r() * .09, high: .5 + r() * .5});
+    for (let Y = 0; Y < H; Y++) for (let X = 0; X < W; X++){
+      const dx = X - x * HD, dy = H - Y, ang = Math.atan2(dx, dy), d = Math.hypot(dx, dy) / (len * HD);
+      if (d >= 1) continue;
+      let v = 0;
+      for (const b of bands){ const q = (ang - b.at) / b.wide; if (q > -1 && q < 1) v = Math.max(v, b.high * (1 - q * q)); }
+      if (v && v * (1 - d) * (1 - d) + bay(X, Y) * .5 > .3) p.put(X, Y, [c[0], c[1], c[2], .5]);
+    }
+    cv = p.canvas(); RAYS.set(id, cv);
+  }
+  k.g.globalAlpha = a * (.75 + .25 * Math.sin(t * .11));
+  k.g.drawImage(cv, 0, 0);
+  k.g.globalAlpha = 1;
+}
 
 // ---------- a little life ----------
 // People breathe, blink and let their heads drift all the time. Every so often they do
@@ -3888,8 +4074,10 @@ function birdLife(k, t, dt, key, n, perches, kinds, opts = {}){
     else if (b.state === 'in' && b.u > .82) frame = 'flare';
     else frame = Math.floor(t * 14 + b.x) % 2 ? 'up' : 'down';
     if (b.state === 'in' || b.state === 'out') b.dir = (b.state === 'in' ? b.spot.x - b.x : b.to.x - b.x) >= 0 ? 1 : -1;
-    const cv = birdSprite(b.kind, frame, b.dir);
-    k.g.drawImage(cv, Math.round(b.x * HD) - 7, Math.round((b.y - (b.hop || 0)) * HD) - cv.height);
+    const cv = birdSprite(b.kind, frame, b.dir), X = Math.round(b.x * HD) - 7, Y = Math.round((b.y - (b.hop || 0)) * HD) - cv.height;
+    // on the ground it has a shadow, which comes away from its feet when it hops
+    if (b.state === 'perch' && b.perch.ground && k.light) castShadow(k, cv, X, Y, cv.height, Math.round(b.y * HD), shadowOf(k.light, b.x, b.y));
+    blit(k, cv, X, Y);
   }
 }
 
@@ -3980,7 +4168,11 @@ const FOLK = {
            p:'#f4f0f8', P:'#4fd1c5', o:'#e04a4a', O:'#a83030', L:'#ff7a6a', d:'#e04a4a', j:'#2a2a36', J:'#1a1a24', w:'#4fd1c5'}},
 };
 function drawFolk(k, f, x, gy, dir, gait, u, hands){
-  rigDraw(k.g, f, {...REST, ...gaitPose(u, gait), ...hands}, Math.round(x * HD), Math.round(gy * HD) - RIG_GROUND, dir, k.light);
+  const pose = {...REST, ...gaitPose(u, gait), ...hands}, X = Math.round(x * HD), Y = Math.round(gy * HD) - RIG_GROUND, L = k.light;
+  // whichever way they're walking, the light stays where it is, and they pass under it
+  const lit = L && L.key && Math.sign(L.key.x - x) !== L.side ? (L.flipped ||= {...L, id: L.id + 'f', side: -L.side}) : L;
+  if (L) castShadow(k, rigFrame(f, pose, dir, lit), dir < 0 ? X + 24 - RIG_W + RIG_X : X - RIG_X, Y - RIG_Y, RIG_GROUND + RIG_Y, Math.round(gy * HD), shadowOf(L, x + 6, gy));
+  rigDraw(k.g, f, pose, X, Y, dir, lit);
 }
 // a pram, 13 wide; its handle reaches back toward whoever is pushing
 function drawPram(k, x, gy, dir, bob){
@@ -4017,12 +4209,13 @@ function parkFolk(k, t, dt){
   for (const w of [...folk].sort((a, b) => a.gy - b.gy)){
     if (w.x < -50 || w.x > SW + 50) continue;
     const gait = w.kind === 'jogger' ? GAITS.jog : GAITS.walk, u = w.d * HD / gait.step / 2 % 1, frame = Math.floor(u * 4) % 2;
-    k.rect(w.x + 2, w.gy - .5, 8, .5, 'rgba(60,40,20,.25)');
     if (w.kind === 'stroller'){
+      k.rect((w.dir > 0 ? w.x + 12 : w.x - 14) - 4, w.gy - .5, 14, 1, 'rgba(20,48,31,.3)');
       drawPram(k, w.dir > 0 ? w.x + 12 : w.x - 14, w.gy, w.dir, frame ? .5 : 0);
       drawFolk(k, FOLK.lady, w.x, w.gy, w.dir, gait, u, {near: [24, 26], far: [25, 26]});
     } else if (w.kind === 'dog'){
       const dx = w.dir > 0 ? w.x + 17 : w.x - 19, hx = w.dir > 0 ? w.x + 10 : w.x + 2, cx = w.dir > 0 ? dx + 10 : dx + 4;
+      k.rect(dx - 3, w.gy, 14, 1, 'rgba(20,48,31,.3)');
       drawDog(k, dx, w.gy + .5, w.dir, w.d * .9);
       for (let j = 0; j <= 10; j++){ const tt = j / 10; k.rect(hx + (cx - hx) * tt, w.gy - 7 + (-.5) * tt + Math.sin(Math.PI * tt) * 1.5, .5, .5, '#c2334d'); }
       drawFolk(k, FOLK.walker, w.x, w.gy, w.dir, gait, u, {near: [21, 26]});
@@ -4177,7 +4370,8 @@ function campfire(k, t, dt, x, y){
   // smoke, thin and rising, carried off by whatever wind there is
   for (let j = 0; j < 7; j++){
     const age = (t * .13 + j / 7) % 1, h = age * 62, r = Math.round(1 + age * 5);
-    k.glow(x + Math.sin(j * 2 + t * .5 + age * 7) * (1 + age * 5) + lean * age * 6, y - 14 - h, r, '#7a7a8a', .16 * (1 - age) * Math.min(1, age * 7));
+    // lit orange from below while it's low, and grey once it has climbed out of the firelight
+    k.glow(x + Math.sin(j * 2 + t * .5 + age * 7) * (1 + age * 5) + lean * age * 6, y - 14 - h, r, age < .2 ? '#c87a4a' : age < .42 ? '#94786e' : '#7a7a8a', .16 * (1 - age) * Math.min(1, age * 7));
   }
   // embers glowing in the logs
   for (let j = 0; j < 7; j++){
@@ -4234,8 +4428,6 @@ function eyesInTheDark(k, t, dt){
   k.g.fillRect(Math.round(e.x * HD), Math.round(e.y * HD), 1, 1); k.g.fillRect(Math.round((e.x + e.gap) * HD) + 1, Math.round(e.y * HD), 1, 1);
   k.g.globalAlpha = 1;
 }
-// how much firelight reaches x: 0 is moonlight only
-const firelit = x => clamp(1 - Math.abs(x - 208) / 76, 0, 1);
 function foxSight(){
   const dir = Math.random() < .5 ? 1 : -1, y = 113 + Math.random() * 3, stopAt = dir > 0 ? 60 + Math.random() * 90 : 262 - Math.random() * 40;
   let x = dir > 0 ? -28 : SW + 28, step = 0, paused = 0, stopped = false;
@@ -4243,8 +4435,8 @@ function foxSight(){
     const moving = paused <= 0;
     if (!stopped && (dir > 0 ? x > stopAt : x < stopAt)){ stopped = true; paused = 2.4 + Math.random() * 2.6; }
     if (moving){ x += dir * 19 * dt; step += dt * 9; } else paused -= dt;
-    const frame = moving ? Math.floor(step) % 4 : 0, pal = FOX_PALS[firelit(x) > .15 ? 1 : 0], cv = shapeSprite(`fox${frame}${moving ? '' : 's'}${pal === FOX_PALS[1] ? 'l' : ''}`, 26, 14, foxAt(frame, !moving), pal, dir, 'dD');
-    blit(k, cv, x * HD, y * HD - 14);
+    const frame = moving ? Math.floor(step) % 4 : 0, cv = shapeSprite(`fox${frame}${moving ? '' : 's'}`, 26, 14, foxAt(frame, !moving), FOX_PALS[1], dir, 'dD');
+    onGround(k, cv, x * HD, y * HD - 14);
     return dir > 0 ? x < SW + 30 : x > -30;
   };
 }
@@ -4260,8 +4452,8 @@ function deerSight(){
     else if (stage === 4){ x -= dir * 8 * dt; step += dt * 4; }
     flick = stage === 2 && Math.sin(clock * 4) > .7;
     const face = stage === 4 ? -dir : dir, frame = stage === 0 || stage === 4 ? Math.floor(step) % 4 : 0, graze = stage === 1 || stage === 3;
-    const pal = DEER_PALS[firelit(x) > .1 ? 1 : 0], cv = shapeSprite(`deer${frame}${graze ? 'g' : ''}${flick ? 'f' : ''}${pal === DEER_PALS[1] ? 'l' : ''}`, 32, 28, deerAt(frame, graze, flick), pal, face);
-    blit(k, cv, x * HD, y * HD - 27);
+    const cv = shapeSprite(`deer${frame}${graze ? 'g' : ''}${flick ? 'f' : ''}`, 32, 28, deerAt(frame, graze, flick), DEER_PALS[1], face);
+    onGround(k, cv, x * HD, y * HD - 27);
     return stage < 4 || (dir > 0 ? x > -36 : x < SW + 36);
   };
 }
@@ -4276,8 +4468,9 @@ function rabbitSight(){
       lift = Math.sin(Math.min(1, phase) * Math.PI) * 4; pose = phase < .2 || phase > .85 ? 1 : 2;
       if (phase >= 1){ phase = 0; if (++hops % (2 + Math.floor(Math.random() * 3)) === 0) wait = .7 + Math.random() * 2.2; }
     }
-    k.rect(x + 1, y - .25, 5, .5, 'rgba(0,0,0,.3)');
-    blit(k, shapeSprite('rabbit' + pose, 12, 10, rabbitAt(pose), RABBIT_PAL, dir), x * HD, (y - lift) * HD - 9);
+    const cv = shapeSprite('rabbit' + pose, 12, 10, rabbitAt(pose), RABBIT_PAL, dir), L = k.light;
+    if (L) castShadow(k, cv, x * HD, (y - lift) * HD - 9, 10, y * HD, shadowOf(L, x + 3, y));
+    blit(k, cv, x * HD, (y - lift) * HD - 9);
     return dir > 0 ? x < SW + 10 : x > -10;
   };
 }
@@ -4443,7 +4636,7 @@ function ducksSight(){
       // the wake
       g.fillStyle = 'rgba(190,206,255,.32)';
       for (let j = 2; j < 12; j += 2){ g.fillRect(Math.round((bx - dir * j) * HD), Math.round((by + j * .22) * HD), 2, 1); g.fillRect(Math.round((bx - dir * j) * HD), Math.round((by - j * .15) * HD), 2, 1); }
-      if (i === 0) blit(k, shapeSprite('duck', 15, 8, duckShape, DUCK_PAL, dir), (bx - 7) * HD, by * HD - 14);
+      if (i === 0){ const cv = shapeSprite('duck', 15, 8, duckShape, DUCK_PAL, dir); mirrorRows(k, litSprite(cv, k.light, 0, 1), (bx - 7) * HD, by * HD - 6, .3, t, 7); blit(k, cv, (bx - 7) * HD, by * HD - 14); }
       else { k.rect(bx - 1, by - 1.6, 2.5, 1.3, '#6a6a5a'); k.rect(bx + dir, by - 2.2, 1, 1, '#8a8a60'); }
     }
     return dir > 0 ? x - n * 6.5 < SW + 8 : x + n * 6.5 > -8;
@@ -4457,6 +4650,9 @@ function heronSight(){
     age += dt;
     const fade = Math.min(1, age * .6, (dur - age) * .6), low = age > strike && age < strike + .7, g = k.g;
     if (fade <= 0) return false;
+    // its legs and body, upside down in the water below it
+    g.globalAlpha = fade * .22; g.fillStyle = '#7a88a8';
+    for (let j = 0; j < 24; j++) if (j % 3 !== 2) g.fillRect(Math.round((x + (j < 12 ? 0 : -2) + Math.sin(t * 2 + j) * .5) * HD), Math.round((y + j * .5) * HD), j < 12 ? 2 : 10, 1);
     g.globalAlpha = fade;
     k.rect(x, y - 12, .5, 12, '#2a3048'); k.rect(x + 1.5, y - 12, .5, 12, '#242a40');
     k.rect(x - 2, y - 17, 6, 5, '#465478'); k.rect(x - 3.5, y - 15, 2, 4, '#303a5a'); k.rect(x - 2, y - 17, 6, .5, '#7a88a8');
@@ -4511,6 +4707,7 @@ function lightningSight(x0, x1){
     return (k, t, dt) => {
       age += dt;
       const on = age < .08 || (age > .16 && age < .22) || (age > .38 && age < .44);
+      pst.lightning = on && !ledMode;
       if (on){
         k.g.fillStyle = 'rgba(180,196,255,.32)'; k.g.fillRect(x0 * HD, 18 * HD, (x1 - x0) * HD, 78 * HD);
         for (let i = 0; i < pts.length - 1; i++) for (let u = 0; u < 1; u += .1) k.rect(lerp(pts[i][0], pts[i + 1][0], u), lerp(pts[i][1], pts[i + 1][1], u), .5, .5, '#f4f6ff');
@@ -4730,23 +4927,24 @@ function spectrum(n, t){
 function sitHero(k, x, seatY, rest){
   const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(seatY * HD) - SEAT_ROW;
   scene.heroX = x; scene.heroY = Y / HD;
-  heroDraw(k, c, livePose({...REST, sit: true, near: [16, 28], far: [18, 27], ...rest}, k.live), X, Y);
+  heroDraw(k, c, livePose({...REST, sit: true, near: [16, 28], far: [18, 27], ...rest}, k.live), X, Y, SEAT_ROW + 9 + RIG_Y, k.light && k.light.seat);
 }
 function walkHero(k, x, groundY){
   const c = CHARS[k.who] || CHARS.guy, X = Math.round(x * HD), Y = Math.round(groundY * HD) - RIG_GROUND;
   scene.heroX = x; scene.heroY = Y / HD;
   // in the cover art they're always mid-stride
   const u = k.live || playing ? scene.scroll / STRIDE / 2 % 1 : .03, w = k.live ? scene.walk : 1;
-  k.rect(x + 2, groundY - .5, 9, .5, 'rgba(30,16,30,.2)');
-  heroDraw(k, c, livePose({...REST, sit: false, ...gaitPose(u, GAITS.walk, w)}, k.live), X, Y);
+  heroDraw(k, c, livePose({...REST, sit: false, ...gaitPose(u, GAITS.walk, w)}, k.live), X, Y, RIG_GROUND + RIG_Y, groundY);
 }
 // a laptop's screen lights the face in front of it
 const SCREEN_LIGHTS = {};
 const screenLight = L => SCREEN_LIGHTS[L ? L.id : '-'] ||= {...(L || {dim: 1, tint: [0, 0, 0], tintAmt: 0}), id: (L ? L.id : '') + 's', rim: '#a8e8ff', rimAmt: .62, side: 1, flicker: false};
-function heroDraw(k, c, p, X, Y){
+function heroDraw(k, c, p, X, Y, foot, ground){
   const L = k.light, a = p.a, lit = a && a.lid > .5 ? screenLight(L) : L;
   // firelight comes and goes
   const level = lit && lit.flicker ? Math.floor(vnoise(life.clock * 7, 5, 1, 19) * 2.99) : 1;
+  // their shadow, cast from their real shape, so a walker's legs scissor in it
+  if (L && ground !== undefined) castShadow(k, rigFrame(c, p, 1, lit, level), X - RIG_X, Y - RIG_Y, foot, Math.round(ground * HD), shadowOf(L, X / HD + 6, ground));
   rigDraw(k.g, c, p, X, Y, 1, lit, level);
   // k.holding: something they keep in hand whenever an action isn't giving them something else
   const prop = a && a.prop || k.holding;
@@ -4887,8 +5085,9 @@ function outdoorRain(k, dt, key, lands = [[110, 150, 'ground']]){
       continue;
     }
     // drops falling nearer to us (landing lower down) are longer and brighter
-    const near = d.land.y / SH, len = 2 + near * 2.5;
-    g.fillStyle = `rgba(180,195,240,${(.3 + near * .35).toFixed(2)})`;
+    // a drop catches the light of any lamp or fire it falls through
+    const near = d.land.y / SH, len = 2 + near * 2.5, at = k.light && k.light.spots ? lightAt(k.light, d.x, d.y) : null;
+    g.fillStyle = at && at.level ? (at.level > 1 ? at.spot.col : `rgba(${rgb(at.spot.col).slice(0, 3).join()},.65)`) : `rgba(180,195,240,${(.3 + near * .35).toFixed(2)})`;
     g.fillRect(Math.round(d.x * HD), Math.round((d.y - len) * HD), 1, Math.round(len * HD));
   }
   for (const h of st.hits){
@@ -5140,9 +5339,10 @@ function paintCloud(c, o){
   cloudMargins(c);
   const midX = c.x + c.w / 2, midY = c.y + c.base / HD;
   let L;
-  if (o.moon){
-    const M = o.moon, dx = M.x - midX, dy = midY - M.y;
-    L = {below: dy < -3, slope: clamp(dx / Math.max(8, Math.abs(dy)), -2.2, 2.2), relief: .55, gain: .92, far: .34, moonX: (M.x - c.x) * HD, moonY: (M.y - c.y) * HD, moonR: M.r * HD};
+  const M = o.moon || o.sun;
+  if (M){
+    const dx = M.x - midX, dy = midY - M.y;
+    L = {below: dy < -3, slope: clamp(dx / Math.max(8, Math.abs(dy)), -2.2, 2.2), relief: o.moon ? .55 : .9, gain: o.moon ? .92 : 1, far: o.moon ? .34 : 0, moonX: (M.x - c.x) * HD, moonY: (M.y - c.y) * HD, moonR: M.r * HD};
   } else {
     const S = o.light || {};
     L = {below: !!S.under, slope: S.under ? clamp(((S.sunX ?? midX) - midX) / 130, -.7, .7) : -(S.side ?? .08) * 3, relief: S.under ? .55 : 1, gain: S.gain ?? 1};
@@ -5150,7 +5350,7 @@ function paintCloud(c, o){
   cloudShade(c, cloudLut(cols), cols.length, L);
   // how much of the moon this cloud is covering, for whoever wants to know
   c.cover = 0;
-  if (o.moon){
+  if (M){
     const X = Math.round(L.moonX), Y = Math.round(L.moonY), R = Math.round(L.moonR * .7);
     if (X >= -R && X < c.W + R && Y >= -R && Y < c.H + R){
       let hit = 0;
@@ -5166,8 +5366,9 @@ function paintCloud(c, o){
 // Clouds drifting across, each going through its own life: gathering, swelling or thinning, and
 // finally dissolving, with new ones taking their place. o: n, y0, y1 (top of the band), w0, w1
 // (sizes), speed, cols, seed, tall, parallax (how much walking moves them), mix (shares of heaped,
-// bank, wisp, scrap), then light {side, under, sunX, gain} or moon {x, y, r} to light each one
-// from the moon, with a silver edge on any that pass close by. Returns how much of the moon is covered, 0..1.
+// bank, wisp, scrap), then sun or moon {x, y, r} to light each one from wherever it hangs, with a
+// bright edge on any that pass close by, or light {side, under, sunX, gain}. Returns how much of
+// the sun or moon is covered, 0..1.
 function cloudDeck(k, t, dt, key, o){
   const r = pst[key + 'Chance'] ||= mulberry32((o.seed || 1) * 97 + 5);
   const list = drifting(key, o.n, () => newCloud(o, r, true));
@@ -5294,7 +5495,12 @@ function tippedSprite(id, cv, deg){
   out = p.canvas(); SHAPES.set(key, out);
   return out;
 }
-const blit = (k, cv, X, Y) => k.g.drawImage(cv, Math.round(X), Math.round(Y));
+// draws a sprite as it looks where it is right now, in whatever light reaches it
+const blit = (k, cv, X, Y) => {
+  const L = k.light;
+  if (L){ const at = lightAt(L, (X + cv.width / 2) / HD, (Y + cv.height) / HD); cv = litSprite(cv, L, at.level, at.side, at.spot); }
+  k.g.drawImage(cv, Math.round(X), Math.round(Y));
+};
 // rows of letters as a sprite, one letter to a canvas pixel
 function rowSprite(id, rows, pal, dir = 1){
   const key = id + '|rows|' + dir + '|' + pal.k;
@@ -5352,7 +5558,19 @@ const CW_FAR = 640, CW_MID = 640, CW_KEEP = 480, CW_WALL = 384; // logical width
 const C_CASTLE = ['#170f34','#22184a','#30225c','#42306e','#5a4486','#7a62a8'];
 const C_CASTLE_LIT = ['#170f34','#22184a','#30225c','#42306e','#5a4486','#7a62a8','#c0aee8'];
 const R_IVY = ['#081414','#0c1e1a','#12281e','#1a3424','#24402a','#30502e'];
-const KEEP_WINDOWS = [], KEEP_FLAGS = [], KEEP_ROSE = [];
+const KEEP_WINDOWS = [], KEEP_FLAGS = [], KEEP_ROSE = [], KEEP_EDGES = [];
+// A torch lights whoever's passing, more the closer they get, from whichever side it's on, with the
+// moon still on their other shoulder. Its light goes as they walk away.
+const TORCH_LIGHTS = {};
+function torchLight(tx, heroX){
+  const L0 = LIGHTS.castle, d = tx - heroX, a = Math.abs(d), level = a > 44 ? 0 : a > 28 ? 1 : a > 14 ? 2 : 3;
+  if (!level) return L0;
+  const side = d < 0 ? -1 : 1, key = level + (side < 0 ? 'l' : 'r');
+  const L = TORCH_LIGHTS[key] ||= {...L0, id: 'c' + key, dim: L0.dim + level * .07, tintAmt: L0.tintAmt - level * .05, rim: '#ffb060', rimAmt: .26 + level * .12, side, flicker: true,
+    rim2: side < 0 ? L0.rim : undefined, rimAmt2: .35, side2: -side, spots: [{x: tx, y: WALL_Y + 2, r: 46, col: '#ffb060', long: 1.1, shadow: .42, fire: true}]};
+  L.spots[0].x = tx;
+  return L;
+}
 const TAU = Math.PI * 2;
 const farRidge = x => 90 - 9 * Math.sin(TAU * x / CW_FAR * 2 + 1) - 6 * Math.sin(TAU * x / CW_FAR * 5 + 2) - 2.5 * Math.sin(TAU * x / CW_FAR * 13);
 const midRidge = x => 104 - 5 * Math.sin(TAU * x / CW_MID * 3 + 4) - 2.5 * Math.sin(TAU * x / CW_MID * 7);
@@ -5493,6 +5711,7 @@ function paintKeep(){
   }
   function roundTower(x, w, top, spireH, seed){
     stone(x, top, w, GROUND + 4, seed, true);
+    KEEP_EDGES.push({x, w, top, bottom: GROUND + 4});
     for (let X = D(x - 1); X < D(x + w + 1); X++){
       p.put(X, D(top), rgb('#4a3c86')); p.put(X, D(top) + 1, rgb('#241c4a'));
       if (((X - D(x)) & 3) === 0) p.put(X, D(top) + 2, DARK);
@@ -5502,6 +5721,7 @@ function paintKeep(){
   }
   function squareTower(x, w, top, seed){
     stone(x, top, w, GROUND + 4, seed, false);
+    KEEP_EDGES.push({x, w, top, bottom: GROUND + 4});
     ledge(x, w, top); crenels(x - .5, w + 1, top, seed);
     windows(x, w, top, seed);
   }
@@ -5947,7 +6167,7 @@ function crabSight(){
       if ((dash -= dt) <= 0 && !close){ rest = .3 + Math.random() * .9; claws = Math.random() < .55; }
     }
     const frame = rest > 0 ? 0 : Math.floor(step) % 2, jig = rest <= 0 ? 0 : Math.round(Math.sin(t * 30) * .4);
-    blit(k, shapeSprite(`crab${frame}${claws ? 'c' : ''}`, 16, 10, crabAt(frame, claws), CRAB_PAL, 1, 'l'), x * HD, y * HD - 9 + jig);
+    onGround(k, shapeSprite(`crab${frame}${claws ? 'c' : ''}`, 16, 10, crabAt(frame, claws), CRAB_PAL, 1, 'l'), x * HD, y * HD - 9 + jig);
     return x > -30 && x < SW + 30;
   };
 }
@@ -6203,7 +6423,7 @@ const PLACES = {
         for (let i = 0; i < 16; i++) k.dot(ss.x - i * 1.1, ss.y - i * .33, `rgba(240,235,255,${(1 - i / 16) * Math.min(1, ss.life * 2)})`);
       }
       k.glow(262, 28, 22, '#c8b8ff', .15 + beat * .25);
-      cloudDeck(k, t, dt, 'cClouds', {mix: [.2, .3, .4, .1], n: 6, y0: 6, y1: 60, w0: 60, w1: 150, speed: 1.2, cols: C_CASTLE_LIT, seed: 61, tall: .1, parallax: .02, moon: {x: 262, y: 28, r: 12}});
+      const cover = cloudDeck(k, t, dt, 'cClouds', {mix: [.2, .3, .4, .1], n: 6, y0: 6, y1: 60, w0: 60, w1: 150, speed: 1.2, cols: C_CASTLE_LIT, seed: 61, tall: .1, parallax: .02, moon: {x: 262, y: 28, r: 12}});
       rare(k, t, dt, 'cSky', {dragon: dragonSight(28), comet: cometSight}, [30, 70]);
       for (const b of drifting('cBats', 3, i => ({x: SW + 20 + i * 150, y: 18 + i * 14, v: 18 + i * 5, p: i * 2}))){
         b.x -= b.v * dt;
@@ -6225,6 +6445,14 @@ const PLACES = {
         l.lvl += ((l.on ? 1 : 0) - l.lvl) * Math.min(1, dt * (l.on ? .9 : .6));
       }
       for (let base = ko; base < DW; base += KW){
+        // a tower that has passed under the moon has its light on the other edge now
+        for (const e of KEEP_EDGES){
+          const X0 = base + Math.round(e.x * HD), X1 = X0 + Math.round(e.w * HD) - 1;
+          if (X1 < 0 || X0 > DW || (X0 + X1) / 2 / HD < 262) continue;
+          const Y = Math.round(e.top * HD) + 2, H = Math.round((e.bottom - e.top) * HD) - 2;
+          g.fillStyle = '#2f2558'; g.fillRect(X1, Y, 1, H);
+          g.fillStyle = '#8a78d0'; g.fillRect(X0, Y, 1, H);
+        }
         KEEP_WINDOWS.forEach((w, i) => {
           const l = lights[i], X = base + Math.round(w.x * HD);
           if (l.lvl < .02 || X < -10 || X > DW + 10) return;
@@ -6251,6 +6479,7 @@ const PLACES = {
         }
       }
       wrapDraw(g, L.mist, sc * .3 + t * 2, 98);
+      skyDim(k, 'castleDim', cover, dt, '6,3,20', .2, LIGHTS.castle);
       outdoorRain(k, dt, 'castle', [[123, 126, 'ground'], [126, 150, 'none']]);
       const wo = wrapDraw(g, L.wall, sc);
       // the spectrum glows out of the wall like runes
@@ -6264,7 +6493,12 @@ const PLACES = {
         if (h > 6) k.glow(x + 1, SH - 2 - h, 3.5, '#4fd1c5', .45);
       });
       rare(k, t, dt, 'cWall', {cat: wallCatSight}, [28, 70]);
+      // whichever torch is closest lights the walker, and throws their shadow along the wall
+      let nearest = 1e9;
+      for (let X = wo + 70 * HD; X < DW + 20 + 96 * HD; X += 96 * HD) if (Math.abs(X / HD + 1.5 - 52) < Math.abs(nearest - 52)) nearest = X / HD + 1.5;
+      k.light = torchLight(nearest, 52);
       walkHero(k, 46, WALL_Y);
+      k.light = LIGHTS.castle;
       // torches are mounted on the wall face, nearer the camera than the walkway
       for (let X = wo + 70 * HD; X < DW + 20; X += 96 * HD) if (X > -20) torchFlame(k, X / HD, t, beat);
     },
@@ -6375,6 +6609,10 @@ const PLACES = {
         k.rect(c.x, c.v > 0 ? 94.5 : 95.5, 1, .5, c.v > 0 ? '#fff0c0' : '#ff5a5a');
       }
       g.restore();
+      // at night the glass shows the room: a ghost of the lamp and the screen, over the city
+      g.save(); g.beginPath(); g.rect(40 * HD, 18 * HD, 112 * HD, 78 * HD); g.clip();
+      k.glow(146, 70, 16, '#ffb060', .13); k.glow(120, 62, 24, '#4fd1c5', .07 + flashy() * .03);
+      g.restore();
       for (const x of [95]) k.rect(x, 18, 2, 78, '#3a2218');
       k.rect(40, 55, 112, 2, '#3a2218');
       rainIn(k, dt, 40, 18, 112, 78, 80, 'rgba(170,190,255,.5)', 'office');
@@ -6391,6 +6629,7 @@ const PLACES = {
         k.rect(103 + i * 3, 97 - h, 2, h, '#4fd1c5'); k.rect(103 + i * 3, 97 - h, 2, .5, '#c8fff8');
       });
       k.glow(120, 88, 18, '#4fd1c5', .12 + flashy() * .1, 12);
+      k.glow(120, 104.5, 24, '#4fd1c5', .14 + flashy() * .05, 2);   // the polished desk gives back the screen
       for (let j = 0; j < 3; j++){
         const age = (t * .7 + j / 3) % 1;
         k.rect(148.5 + Math.sin(t * 2 + j * 2) * 1.5, 96 - age * 9, .5, 1, `rgba(255,255,255,${.5 * (1 - age)})`);
@@ -6403,6 +6642,7 @@ const PLACES = {
       }
       sitHero(k, 66, 112);
       officeCat(k, t, dt);
+      if (pst.lightning){ g.fillStyle = 'rgba(190,205,255,.16)'; g.fillRect(0, 0, DW, DH); pst.lightning = false; }   // for an instant it lights the whole room
     },
   },
 
@@ -6418,7 +6658,8 @@ const PLACES = {
       p.glow(272, 34, 46, '#fff4c8', .55); p.circle(272, 34, 10, '#fff6dc'); p.circle(271, 33, 8, '#fffdf2');
     },
     bg(p){
-      p.hill(PARK_FAR, ['#3e6a7c','#4c7a82','#5e8c88','#749e8e','#8eb498','#acc8a4'], 3, {rim:'#c8dcb0', depth:26, rough:.12});
+      p.sun = 1;
+      p.hill(PARK_FAR, ['#3e6a7c','#4c7a82','#5e8c88','#749e8e','#8eb498','#acc8a4'], 3, {rim:'#c8dcb0', depth:26, rough:.12, sunX: 272});
       const obsY = PARK_FAR(70);
       p.box(63, obsY - 6, 16, 7, ['#6a667e','#a6a2b8','#d8d4e2']);
       p.dome(71, obsY - 6, 7.5, ['#7a7690','#a8a4bc','#d0ccdc','#f2f0f8']);
@@ -6441,21 +6682,23 @@ const PLACES = {
       for (let i = 0; i < 40; i++){ const x = r() * SW, y = 127.5 + r() * 6.5; p.rect(x, y, 1, .5, '#8a7a5a'); p.dot(x + .5, y, '#f4e4c0'); }
     },
     front(p){
+      p.sun = 1;
       for (const m of parkTrees()) paintTree(p, m);
       for (const b of parkBushes()){ p.ellipse(b.s.x - 2, b.s.y + .2, b.s.w * .58, 1.8, 'rgba(26,44,36,.5)'); p.ellipse(b.s.x - 1, b.s.y, b.s.w * .4, 1, 'rgba(20,30,28,.5)'); }
-      p.ellipse(162, 127, 30, 2, 'rgba(30,40,30,.35)');
+      p.ellipse(157, 128, 30, 2, 'rgba(30,40,30,.35)');
       p.box(142, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']); p.box(186, 117, 2, 10, ['#0e0c16','#1c1a2a','#4a4860']);
       p.wood(138, 114.5, 54, 2, R_WOODL, 16); p.wood(138, 116.5, 54, 1.5, R_WOOD, 17);
       p.wood(140, 104, 50, 2, R_WOODL, 18); p.wood(140, 108, 50, 2, R_WOODL, 19);
       p.box(141, 103, 2, 12, ['#0e0c16','#1c1a2a','#4a4860']); p.box(187, 103, 2, 12, ['#0e0c16','#1c1a2a','#4a4860']);
-      p.ellipse(213, 126.5, 5, 1, 'rgba(30,40,30,.4)');
+      // the lamp's shadow, thin and long, running away from the sun
+      line(p, 213, 126.5, 192, 135.5, 'rgba(20,48,31,.32)', 1);
       p.box(214, 80, 2, 46, ['#0e0c16','#1c1a2a','#4a4860']); p.box(210, 76, 10, 5, ['#0e0c16','#1c1a2a','#4a4860']);
       p.box(211.5, 77.5, 7, 2.5, ['#c8b070','#fff1b8','#fffbe8']); p.box(212, 124, 6, 2, ['#0e0c16','#1c1a2a','#4a4860']);
     },
     draw(g, t, dt, k){
       const still = reduceMotion;
       k.img(placeSky('park'), 0, 0);
-      cloudDeck(k, t, dt, 'parkClouds', {n: 7, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, light: {side: -.28, rim: .1}});
+      const cover = cloudDeck(k, t, dt, 'parkClouds', {n: 7, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, sun: {x: 272, y: 34, r: 10}});
       rare(k, t, dt, 'parkSky', {kite: kiteSight, balloon: balloonSight}, [14, 40]);
       for (const b of drifting('parkBirds', 2, i => ({x: SW + i * 160, y: 20 + i * 14, p: i * 2}))){
         b.x -= 16 * dt;
@@ -6496,6 +6739,7 @@ const PLACES = {
       parkFolk(k, t, dt);
       drawTufts(k, pst.parkPath ||= fringe(() => 135, -4, SW + 4, 19, {size: 7, depth: .5}), PAL_GRASS, t, still);
       drawFronds(k, t, still);
+      skyDim(k, 'parkDim', cover, dt, '22,32,64', .24, LIGHTS.park);
       outdoorRain(k, dt, 'park', [[100, 150, 'ground']]);
     },
   },
@@ -6504,15 +6748,16 @@ const PLACES = {
   lake:{
     sky(p){ p.sky(['#03051a','#070c2a','#0d143a','#141e4a','#1c2a5a','#24356a'], 0, 84); },
     bg(p){
+      p.sun = 1;
       p.sky(['#03051a','#070c2a','#0d143a','#141e4a','#1c2a5a','#24356a'], 0, 84);
       const bare = p.snapshot();
       const far = x => 68 - 10 * Math.sin(x * .02 + 2) - 5 * Math.sin(x * .07);
-      p.hill(far, ['#0c1236','#121a44','#1a2452','#243062'], 13, {rim:'#4a5c9a', depth:20});
+      p.hill(far, ['#0c1236','#121a44','#1a2452','#243062','#30407a'], 13, {rim:'#4a5c9a', depth:20, sunX: 262});
       const ky = far(79);
       p.box(76, ky - 22, 6, 24, ['#080c26','#0e1434','#1c2450']); p.box(74, ky - 14, 10, 4, ['#080c26','#0e1434','#1c2450']);
       for (let i = 0; i < 7; i++) p.rect(76 + i * .4, ky - 22 - i, Math.max(.5, 6 - i * .8), 1, '#0e1434');
       p.rect(78, ky - 16, 1, 1.5, '#ffcf6b'); p.glow(78.5, ky - 15, 5, '#ffb050', .4);
-      p.hill(x => 76 - 5 * Math.sin(x * .03) - 3 * Math.sin(x * .11 + 1), ['#080c28','#0c1230','#10183a'], 14, {rim:'#22306a', depth:10});
+      p.hill(x => 76 - 5 * Math.sin(x * .03) - 3 * Math.sin(x * .11 + 1), ['#080c28','#0c1230','#10183a','#16204a'], 14, {rim:'#22306a', depth:10, sunX: 262});
       const r = mulberry32(5);
       for (let x = 2; x < SW; x += 3 + Math.floor(r() * 4)) p.pine(x, 84, 6 + Math.floor(r() * 10), ['#04071a','#080c24','#0e1430','#16204a','#28386e'], x, {moon: {x: 262}});
       p.sky(['#1a2658','#121c48','#0c1438','#080e2a','#050a20'], 84, 150);
@@ -6544,6 +6789,7 @@ const PLACES = {
       const cover = cloudDeck(k, t, dt, 'lakeClouds', {mix: [.2, .3, .4, .1], n: 5, y0: 2, y1: 40, w0: 60, w1: 130, speed: 1, cols: C_MOONLIT, seed: 3, tall: .12, moon: {x: mx, y: my, r: 11}});
       rare(k, t, dt, 'lakeSky', {comet: cometSight, bats: () => batSight(mx - 60, my + 26)}, [30, 70]);
       k.img(placeBg('lake'), 0, 0);
+      skyDim(k, 'lakeDim', cover, dt, '3,4,18', .24, LIGHTS.lake);
       // the clouds drift in the water too, upside down and faint
       g.save(); g.beginPath(); g.rect(0, 84 * HD, DW, 66 * HD); g.clip();
       g.globalAlpha = .1; g.globalCompositeOperation = 'lighter';
@@ -6636,6 +6882,11 @@ const PLACES = {
       for (let y = 130; y < SH; y += 5) for (let x = 0; x < SW; x += 5)
         p.texture(x, y, 5, 5, ((x + y) / 5) % 2 ? ['#22160f','#2a1c18','#32221c'] : ['#38261e','#3e2a22','#4a3428'], 2, x + y);
       p.glow(150, 134, 40, '#ffc070', .12, 6);
+      // the window's daylight falls across the floor toward us, with the shadow of its middle bar
+      for (let Y = 130 * HD; Y < SH * HD; Y++){
+        const f = (Y / HD - 130) / 20, x0 = (12 - f * 18) * HD, x1 = (132 + f * 12) * HD, b0 = (71 - f * 3) * HD, b1 = (73 + f * 1) * HD;
+        for (let X = Math.max(0, Math.round(x0)); X < x1; X++) if ((X < b0 || X > b1) && bay(X, Y) + (1 - f) * .5 > .2) p.put(X, Y, [214, 230, 255, .1 - f * .05]);
+      }
       p.vignette(.4);
     },
     draw(g, t, dt, k){
@@ -6667,6 +6918,8 @@ const PLACES = {
       for (let i = 0; i <= 6; i++) k.rect(226 + Math.cos(hr) * i * .55, 40 + Math.sin(hr) * i * .55, .5, .5, '#2a1a12');
       glowCone(k, 168, 22, 104, .7, .1 + flashy() * .1);
       glowCone(k, 300, 22, 98, .6, .08 + flashy() * .08);
+      motes(k, t, dt, 'cafeMotes', 46, 8, 320, 24, 132, (x, y) =>
+        x > 14 && x < 130 && y > 62 && y < 130 ? '#dfeaff' : Math.abs(x - 168) < (y - 22) * .7 && y < 104 ? '#ffe0a8' : Math.abs(x - 300) < (y - 22) * .6 && y < 98 ? '#ffe0a8' : null);
       barista(k, t, dt);
       // the machine lets go a burst of steam now and then, and the rest of the time just breathes
       const burst = pst.brewing > 0 ? 1.6 : 1;
@@ -6736,7 +6989,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion;
       k.img(placeSky('garden'), 0, 0);
-      cloudDeck(k, t, dt, 'gardenClouds', {n: 6, y0: 0, y1: 30, w0: 36, w1: 90, speed: 1.5, cols: C_DAY, seed: 21, tall: .24, light: {side: .28, rim: .1}});
+      const cover = cloudDeck(k, t, dt, 'gardenClouds', {n: 6, y0: 0, y1: 30, w0: 36, w1: 90, speed: 1.5, cols: C_DAY, seed: 21, tall: .24, sun: {x: 40, y: 26, r: 9}});
       k.img(placeBg('garden'), 0, 0);
       for (const m of gardenTrees()) drawClumps(k, m.clumps, t, still);
       k.img(placeFg('garden'), 0, 0);
@@ -6773,6 +7026,7 @@ const PLACES = {
       birdLife(k, t, dt, 'gardenBirds', 3, GARDEN_PERCHES, ['robin', 'blue', 'sparrow']);
       gardenBugs(k, t, dt);
       drawFronds(k, t, still, PAL_FROND_GREEN, [5, 11]);
+      skyDim(k, 'gardenDim', cover, dt, '22,32,64', .24, LIGHTS.garden);
       outdoorRain(k, dt, 'garden', [[106, 150, 'ground']]);
     },
   },
@@ -6822,6 +7076,8 @@ const PLACES = {
       for (let i = 0; i < 22 * HD; i++){ const Y = 104 * HD + i, w = Math.round(i * .35); for (let X = 104 * HD - w; X < 104 * HD + w; X++) p.put(X, Y, rgb(i > 30 ? '#ffb050' : '#2a0e06')); }
       p.rect(104, 90, .5, 36, '#ffc080');
       for (let i = 0; i < 30; i++){ p.dot(104 - 30 - i * .4, 126 - i * .5 + 15, '#6a5a4a'); p.dot(104 + 30 + i * .4, 126 - i * .5 + 15, '#6a5a4a'); }
+      // the tent stands between the fire and the ground beyond it
+      p.glow(58, 127, 34, '#03040c', .42, 2.4);
       // the log, and the bag everything comes out of
       p.wood(148, 118, 30, 6, ['#1a0e08','#2e1a10','#4a2c1a','#6a4024','#8a5a34'], 40);
       p.ellipse(148, 121, 1.5, 3, '#c8a070'); p.ellipse(148, 121, .8, 1.8, '#8a6a40');
@@ -6854,17 +7110,18 @@ const PLACES = {
       const mx = 60 + Math.sin(t / 260) * 7, my = 22 - Math.cos(t / 260) * 2;
       moonOrb(k, mx, my, 7, .42 * (1 - (pst.forestDim || 0) * .6));
       const cover = cloudDeck(k, t, dt, 'forestClouds', {mix: [.2, .3, .4, .1], n: 5, y0: 2, y1: 34, w0: 56, w1: 130, speed: 1.3, cols: C_MOONLIT, seed: 5, tall: .14, moon: {x: mx, y: my, r: 7}});
-      pst.forestDim = (pst.forestDim || 0) + (cover - (pst.forestDim || 0)) * Math.min(1, dt * 1.2);
       rare(k, t, dt, 'forestSky', {comet: cometSight, bats: () => batSight(mx + 40, my + 22), owl: owlFlight(mx, my, 282, 77)}, [22, 55]);
       k.img(placeBg('forest'), 0, 0);
       // when a cloud crosses the moon, the night goes a little darker
-      if (pst.forestDim > .02){ g.fillStyle = `rgba(3,5,18,${(pst.forestDim * .22).toFixed(3)})`; g.fillRect(0, 0, DW, DH); }
+      skyDim(k, 'forestDim', cover, dt, '3,5,18', .24, LIGHTS.forest);
       owlPerched(k, t, dt, 282, 77);
       eyesInTheDark(k, t, dt);
       rare(k, t, dt, 'forestEdge', {fox: foxSight, deer: deerSight}, [16, 40]);
       campfire(k, t, dt, 208, 122);
       fireflies(k, t, dt, 'forestFlies', 12, 30, 290, 96, 140);
       drawTufts(k, pst.forestEdge2 ||= fringe(() => 113, -4, SW + 4, 79, {size: 5, lv: 1}).filter(f => f.x < 76 || f.x > 133), PAL_GRASS_NIGHT, t, still);
+      // the log blocks the fire too, and its shadow breathes with the flames
+      k.glow(136, 125.2, 20 + vnoise(life.clock * 7, 5, 1, 19) * 4, '#03040c', .34, 1.7);
       sitHero(k, 160, 118);
       rare(k, t, dt, 'forestNear', {rabbit: rabbitSight}, [25, 60]);
       drawTufts(k, pst.forestGrass ||= fringe(() => 149, -4, SW + 4, 77, {size: 10, lv: 1, depth: 2}), PAL_GRASS_NIGHT, t, still);
@@ -6894,6 +7151,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion, sc = scene.scroll;
       k.img(placeSky('beach'), 0, 0);
+      sunRays(k, t, 'beach', 160, HORIZON, 170, '#ffd9a8', .42);
       cloudDeck(k, t, dt, 'beachClouds', {mix: [.32, .3, .28, .1], n: 8, y0: 2, y1: 48, w0: 36, w1: 110, speed: 1.1, cols: C_SUNSET, seed: 41, tall: .17, parallax: .012, light: {under: 1, sunX: 160}});
       rare(k, t, dt, 'beachSky', {pelicans: pelicanSight}, [40, 90]);
       for (const b of drifting('gulls', 3, i => ({x: SW * (i + .5) / 3, y: 22 + i * 12, v: 11 + i * 4, p: i, dir: i % 2 ? 1 : -1}))){
@@ -6901,10 +7159,16 @@ const PLACES = {
         if (b.x < -14){ b.x = SW + 8 + Math.random() * 120; b.y = 14 + Math.random() * 36; }
         if (b.x > SW + 140){ b.x = -10 - Math.random() * 60; b.y = 14 + Math.random() * 36; }
         const cv = birdSprite('gull', Math.floor(t * 4 + b.p * 3) % 3 === 0 ? 'down' : 'up', b.dir);
-        k.g.drawImage(cv, Math.round(b.x * HD), Math.round((b.y + Math.sin(t * 1.4 + b.p) * 2) * HD));
+        blit(k, cv, Math.round(b.x * HD), Math.round((b.y + Math.sin(t * 1.4 + b.p) * 2) * HD));
       }
       wrapDraw(g, pst.farShore ||= FAR_SHORE(), sc * .022, HORIZON - 26);
+      k.glow(160, 75, 54, '#ffc080', .24, 7);   // the sun's glare washes out the hills nearest it
       k.img(placeBg('beach'), 0, 0);
+      // the sea gives back the clouds, upside down and faint
+      g.save(); g.beginPath(); g.rect(0, HORIZON * HD, DW, (SHORE - HORIZON) * HD); g.clip();
+      g.globalAlpha = .1; g.globalCompositeOperation = 'lighter';
+      for (const c of pst.beachClouds) if (c.cv && c.kind !== 'tuft'){ g.save(); g.translate(Math.round(c.x * HD), Math.round((2 * HORIZON - c.y) * HD)); g.scale(1, -1); g.drawImage(c.cv, 0, 0); g.restore(); }
+      g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; g.restore();
       // the sun's road across the water
       spectrum(12, t).forEach((v, i) => {
         const w = 6 + v * 16 - i * .4;
@@ -6929,6 +7193,7 @@ const PLACES = {
       for (const o of things(0)){
         const cv = beachArt(o.name), x = beachX(o.x, o.f);
         if (x > SW || x + cv.lw < 0) continue;
+        mirrorRows(k, litSprite(cv, k.light, 0, 1), x * HD, o.y * HD, .2, t, Math.min(cv.height, Math.round((SHORE - o.y) * HD)));
         k.img(cv, x, o.y - cv.lh);
         if (o.name === 'pier'){
           for (const lx of [30, 86]) k.glow(x + lx + .25, o.y - cv.lh + 2, 5, '#ffb050', .5);
@@ -6947,6 +7212,7 @@ const PLACES = {
         if (sand.width - off < DW) g.drawImage(sand, 0, Y, DW, H, sand.width - off, y0 * HD, DW, H);
       }
       drawSurf(k, t);
+      k.glow(160, 124, 96, '#ffa868', .13, 20);   // the low sun warms the sand toward it
       // what's lying around on the sand
       for (const o of drifting('shore', 70, i => { const r = mulberry32(i * 7 + 11), y = 115 + r() * 34; return {x: r() * BEACH_LOOP, y, f: beachF(y), kind: Math.floor(r() * 7), v: r()}; })){
         const x = beachX(o.x, o.f);
@@ -6967,9 +7233,12 @@ const PLACES = {
       }
       g.globalAlpha = 1;
       for (const o of things(1).sort((a, b) => a.y - b.y)){
-        const cv = beachArt(o.name), x = beachX(o.x, o.f);
+        const cv = beachArt(o.name), x = beachX(o.x, o.f), mid = x + cv.lw / 2;
+        if (x > SW + 90 || x + cv.lw < -90) continue;
+        // its shadow swings round as it goes by, away from the sun, and only its edge is lit
+        castShadow(k, cv, x * HD, (o.y - cv.lh) * HD, cv.height, o.y * HD, shadowOf(k.light, mid, o.y));
         if (x > SW || x + cv.lw < 0) continue;
-        k.img(cv, x, o.y - cv.lh);
+        k.img(litSprite(cv, k.light, 0, Math.sign(160 - mid) || 1), x, o.y - cv.lh);
         if (o.name === 'tower') beachFlag(k, x + 17, o.y - cv.lh + 1, t);
         if (o.name === 'bonfire') campfireSmall(k, x + 25, o.y - cv.lh + 15, t);
       }
