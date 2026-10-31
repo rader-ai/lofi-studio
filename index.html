@@ -5362,6 +5362,7 @@ function paintCloud(c, o){
     }
   }
   c.g.putImageData(B.img, 0, 0, 0, 0, c.W, c.H);
+  c.next = c.clock + .1 + c.W * c.H / 400000; c.blank = false;
 }
 // Clouds drifting across, each going through its own life: gathering, swelling or thinning, and
 // finally dissolving, with new ones taking their place. o: n, y0, y1 (top of the band), w0, w1
@@ -5372,7 +5373,7 @@ function paintCloud(c, o){
 function cloudDeck(k, t, dt, key, o){
   const r = pst[key + 'Chance'] ||= mulberry32((o.seed || 1) * 97 + 5);
   const list = drifting(key, o.n, () => newCloud(o, r, true));
-  let cover = 0, painted = false;
+  let cover = 0, due = null;
   for (const c of list){
     c.x += (c.v - scene.speed * (o.parallax || 0)) * dt;
     if (!reduceMotion){
@@ -5384,15 +5385,18 @@ function cloudDeck(k, t, dt, key, o){
       // for anyone who'd rather things stayed still, nothing gathers: it just drifts in, fully formed
       const gone = c.x > SW + 8 || c.x < -c.w - 12;
       Object.assign(c, newCloud(o, r, false, reduceMotion || (gone && r() < .5)));
+      c.blank = true;   // its canvas still shows the cloud it used to be
     }
     const a = clamp(c.age / c.rise, 0, 1), b = clamp((c.span - c.age) / c.fade, 0, 1), e = Math.min(a, b);
     c.life = e * e * (3 - 2 * e);
-    // a few repaints a second is plenty, and never more than one in a frame after the first
-    if (!c.cv || (!painted && c.clock >= c.next)){
-      paintCloud(c, o);
-      painted = c.cv && dt > 0;
-      c.next = c.clock + .1 + c.W * c.H / 400000;
-    }
+    // a few repaints a second is plenty, and never more than one in a frame after the first: whichever
+    // has waited longest, or on a slow phone the last clouds in the list would never change, then pop
+    if (!c.cv || (dt === 0 && c.clock >= c.next)) paintCloud(c, o);
+    else if (c.clock >= c.next && (!due || c.clock - c.next > due.clock - due.next)) due = c;
+  }
+  if (due) paintCloud(due, o);
+  for (const c of list){
+    if (c.blank) continue;
     k.img(c.cv, c.x, c.y);
     if (c.cover > cover) cover = c.cover;
   }
@@ -6698,7 +6702,7 @@ const PLACES = {
     draw(g, t, dt, k){
       const still = reduceMotion;
       k.img(placeSky('park'), 0, 0);
-      const cover = cloudDeck(k, t, dt, 'parkClouds', {n: 7, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, sun: {x: 272, y: 34, r: 10}});
+      const cover = cloudDeck(k, t, dt, 'parkClouds', {n: 5, y0: 0, y1: 36, w0: 40, w1: 100, speed: 1.7, cols: C_DAY, seed: 11, tall: .24, sun: {x: 272, y: 34, r: 10}});
       rare(k, t, dt, 'parkSky', {kite: kiteSight, balloon: balloonSight}, [14, 40]);
       for (const b of drifting('parkBirds', 2, i => ({x: SW + i * 160, y: 20 + i * 14, p: i * 2}))){
         b.x -= 16 * dt;
